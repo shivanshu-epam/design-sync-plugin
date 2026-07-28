@@ -1,0 +1,13 @@
+# Node
+*.log
+*.log.*
+node_modules
+
+out/
+dist/
+code.js
+ui.html
+
+# Local Claude Code tool state (permissions, dev-server launch config with
+# machine-specific absolute paths) — not portable project source.
+.claude/
