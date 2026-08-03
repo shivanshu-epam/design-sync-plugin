@@ -4,98 +4,176 @@
 <meta charset="utf-8" />
 <title>Design Sync</title>
 <style>
+  /*
+   * Palette pulled directly from EPAM UUI's own Loveship theme tokens —
+   * the same design system this plugin syncs into GitHub (see
+   * design-tokens.json, Theme/Loveship-Light and Theme/Loveship-Dark).
+   * Not approximated from screenshots: these are the actual
+   * core/neutral, core/semantic, and core/controls values.
+   */
   :root {
     color-scheme: light dark;
-    --bg: #ffffff;
-    --bg-subtle: #f5f5f5;
-    --border: #e6e6e6;
-    --text: #1a1a1a;
-    --text-muted: #6b6b6b;
-    --accent: #18a0fb;
+    --chrome-bg: #1d1e26;      /* Loveship neutral-90 — UUI's own nav chrome is always dark */
+    --chrome-text: #acafbf;    /* neutral-50 */
+    --chrome-text-active: #ffffff;
+
+    --bg: #f5f6fa;             /* neutral-10 — page background */
+    --surface: #ffffff;        /* neutral-0 / control-bg — panels, inputs */
+    --bg-subtle: #ebedf5;      /* neutral-20 — code/log blocks */
+    --border: #ced0db;         /* neutral-40 / control-border */
+    --text: #303240;           /* neutral-80 / control-text */
+    --text-muted: #6c6f80;     /* neutral-60 / control-text-disabled */
+    --text-placeholder: #acafbf; /* neutral-50 */
+
+    --accent: #009ecc;         /* semantic/primary-50 — "Primary Action" blue */
+    --accent-hover: #0086ad;   /* semantic/primary-60 */
     --accent-text: #ffffff;
-    --danger: #d64545;
-    --danger-bg: #fdecec;
-    --success: #1a9c5a;
-    --success-bg: #e9f9f0;
-    --warn: #b8860b;
-    --warn-bg: #fdf6e3;
+
+    --cta: #67a300;            /* semantic/accent-50 — "Call to action" green */
+    --cta-hover: #528500;      /* semantic/accent-60 */
+
+    --danger: #ff4242;         /* semantic/critical-50 */
+    --danger-hover: #e22a2a;   /* semantic/critical-60 */
+    --danger-bg: #fde1e1;      /* semantic/critical-10 */
+
+    --success-bg: #ebf3d8;     /* semantic/accent-10 */
+    --success-text: #303240;
+
+    --warn: #fcaa00;
+    --warn-bg: #ffedc9;
+
+    --radius: 3px;             /* UUI's actual control corner radius */
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #2c2c2c;
-      --bg-subtle: #383838;
-      --border: #454545;
-      --text: #f2f2f2;
-      --text-muted: #a3a3a3;
-      --danger-bg: #3a2323;
-      --success-bg: #1e3327;
+      --bg: #1d1e26;             /* Loveship-Dark neutral-90 */
+      --surface: #272833;        /* Loveship-Dark control-bg */
+      --bg-subtle: #21222b;
+      --border: #585b69;         /* Loveship-Dark control-border */
+      --text: #fafafc;           /* Loveship-Dark control-text */
+      --text-muted: #acafbf;     /* Loveship-Dark control-text-disabled */
+      --text-placeholder: #acafbf;
+
+      --accent: #008ace;         /* Loveship-Dark semantic/primary-50 */
+      --accent-hover: #48a4d0;   /* Loveship-Dark semantic/primary-60 */
+
+      --cta: #669900;            /* Loveship-Dark semantic/accent-50 */
+      --cta-hover: #83b918;      /* Loveship-Dark semantic/accent-60 */
+
+      --danger: #cc482d;         /* Loveship-Dark semantic/critical-50 */
+      --danger-hover: #e56248;   /* Loveship-Dark semantic/critical-60 */
+      --danger-bg: #473943;      /* Loveship-Dark semantic/critical-10 */
+
+      --success-bg: #2c3320;
+      --success-text: #d5e8b3;
+
       --warn-bg: #3a3120;
     }
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Inter, sans-serif;
+    font-family: 'Source Sans Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
     font-size: 12px;
     color: var(--text);
     background: var(--bg);
   }
   #app { display: flex; flex-direction: column; height: 100vh; }
-  header.tabs { display: flex; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+
+  header.app-header { flex-shrink: 0; background: var(--chrome-bg); }
+  .app-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 9px 12px 7px;
+    color: var(--chrome-text-active);
+    font-weight: 700;
+    font-size: 12.5px;
+    letter-spacing: 0.01em;
+  }
+  .app-logo { width: 9px; height: 9px; border-radius: 2px; background: var(--accent); flex-shrink: 0; }
+  nav.tabs { display: flex; }
   .tab-btn {
     flex: 1;
-    padding: 10px 8px;
+    padding: 9px 6px;
     background: none;
     border: none;
     border-bottom: 2px solid transparent;
-    font-size: 11px;
+    font-family: inherit;
+    font-size: 10.5px;
     font-weight: 600;
-    color: var(--text-muted);
+    letter-spacing: 0.01em;
+    color: var(--chrome-text);
     cursor: pointer;
   }
-  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
-  main#panel { flex: 1; overflow-y: auto; padding: 12px; }
-  h2 { font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+  .tab-btn.active { color: var(--chrome-text-active); border-bottom-color: var(--accent); }
+
+  main#panel { flex: 1; overflow-y: auto; padding: 12px; background: var(--bg); }
+  footer.app-footer {
+    flex-shrink: 0;
+    padding: 5px 12px;
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-placeholder);
+    font-size: 9.5px;
+    text-align: right;
+  }
+  h2 { font-size: 11px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 700; }
   .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
   .field label { font-weight: 600; }
   .field input, .field select {
-    padding: 6px 8px;
+    padding: 6px 9px;
     border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--bg);
+    border-radius: var(--radius);
+    background: var(--surface);
     color: var(--text);
+    font-family: inherit;
     font-size: 12px;
+  }
+  .field input::placeholder { color: var(--text-placeholder); }
+  .field input:focus, .field select:focus, table.token-table input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 25%, transparent);
   }
   .row { display: flex; gap: 8px; }
   .row > * { flex: 1; }
   button {
+    font-family: inherit;
     font-size: 12px;
-    padding: 7px 12px;
-    border-radius: 4px;
+    font-weight: 600;
+    padding: 7px 13px;
+    border-radius: var(--radius);
     border: 1px solid var(--border);
-    background: var(--bg-subtle);
+    background: var(--surface);
     color: var(--text);
     cursor: pointer;
   }
+  button:hover:not(:disabled) { border-color: var(--text-muted); }
   button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
-  button.primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
+  /* The actual commit/push action gets UUI's "Call to action" green — its
+     own distinct semantic from the blue "Primary Action" buttons (Save,
+     Test connection, Fetch & compare). */
+  button.cta { background: var(--cta); color: #ffffff; border-color: var(--cta); }
+  button.cta:hover:not(:disabled) { background: var(--cta-hover); border-color: var(--cta-hover); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   button + button { margin-left: 6px; }
   .btn-row { margin-top: 10px; display: flex; }
   .hint { color: var(--text-muted); font-size: 11px; margin-top: 4px; }
-  .status-banner { padding: 8px 10px; border-radius: 4px; margin-bottom: 10px; font-size: 11px; }
-  .status-banner.success { background: var(--success-bg); color: var(--success); }
-  .status-banner.error { background: var(--danger-bg); color: var(--danger); }
+  .status-banner { padding: 8px 10px; border-radius: var(--radius); margin-bottom: 10px; font-size: 11px; border: 1px solid transparent; }
+  .status-banner.success { background: var(--success-bg); color: var(--success-text); border-color: var(--cta); }
+  .status-banner.error { background: var(--danger-bg); color: var(--text); border-color: var(--danger); }
   table.token-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
   table.token-table th, table.token-table td {
     text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--border); font-size: 11px;
   }
-  table.token-table th { color: var(--text-muted); font-weight: 600; }
-  table.token-table input { width: 100%; padding: 4px 6px; font-size: 11px; border: 1px solid var(--border); border-radius: 3px; background: var(--bg); color: var(--text); }
+  table.token-table th { color: var(--text-muted); font-weight: 700; text-transform: uppercase; font-size: 9.5px; letter-spacing: 0.04em; }
+  table.token-table input { width: 100%; padding: 4px 6px; font-size: 11px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); font-family: inherit; }
   .icon-btn { padding: 3px 7px; font-size: 11px; }
   .diff-group { margin-bottom: 14px; }
-  .diff-row { border: 1px solid var(--border); border-radius: 4px; padding: 8px; margin-bottom: 6px; }
-  .diff-row.status-added-figma { border-left: 3px solid var(--success); }
+  .diff-row { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; margin-bottom: 6px; background: var(--surface); }
+  .diff-row.status-added-figma { border-left: 3px solid var(--cta); }
   .diff-row.status-added-github { border-left: 3px solid var(--accent); }
   .diff-row.status-modified { border-left: 3px solid var(--warn); background: var(--warn-bg); }
   .diff-key { font-weight: 600; margin-bottom: 4px; }
@@ -107,7 +185,7 @@
   pre#log {
     background: var(--bg-subtle);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius);
     padding: 8px;
     font-size: 10px;
     max-height: 140px;
@@ -119,9 +197,10 @@
   .history-item a { color: var(--accent); }
   details.setup-guide {
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius);
     margin-top: 10px;
     padding: 8px 10px;
+    background: var(--surface);
   }
   details.setup-guide summary { cursor: pointer; font-weight: 600; font-size: 11px; }
   details.setup-guide summary::marker { color: var(--text-muted); }
@@ -129,7 +208,7 @@
   details.setup-guide pre {
     background: var(--bg-subtle);
     border: 1px solid var(--border);
-    border-radius: 4px;
+    border-radius: var(--radius);
     padding: 8px;
     font-size: 10px;
     overflow-x: auto;
@@ -137,7 +216,7 @@
   }
   details.setup-guide code {
     background: var(--bg-subtle);
-    border-radius: 3px;
+    border-radius: 2px;
     padding: 1px 4px;
     font-size: 10px;
     font-family: ui-monospace, monospace;
@@ -146,13 +225,17 @@
 </head>
 <body>
 <div id="app">
-  <header class="tabs">
-    <button class="tab-btn" data-tab="connect">Connect</button>
-    <button class="tab-btn" data-tab="tokens">Custom Tokens</button>
-    <button class="tab-btn" data-tab="sync">Sync</button>
-    <button class="tab-btn" data-tab="status">Status</button>
+  <header class="app-header">
+    <div class="app-title"><span class="app-logo"></span>Design Sync</div>
+    <nav class="tabs">
+      <button class="tab-btn" data-tab="connect">Connect</button>
+      <button class="tab-btn" data-tab="tokens">Custom Tokens</button>
+      <button class="tab-btn" data-tab="sync">Sync</button>
+      <button class="tab-btn" data-tab="status">Status</button>
+    </nav>
   </header>
   <main id="panel"></main>
+  <footer class="app-footer">Design Sync v<!--APP_VERSION--></footer>
 </div>
 <!--DESIGN_SYNC_SCRIPT-->
 </body>

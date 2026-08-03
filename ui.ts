@@ -611,7 +611,7 @@ function renderSyncTab(): HTMLElement {
 
       const remaining = unresolvedConflictCount();
       const syncBtn = el('button', {
-        className: 'primary',
+        className: 'cta',
         textContent: state.syncing ? 'Syncing…' : 'Sync (write to GitHub & Figma)',
       });
       if (remaining > 0 || state.syncing) syncBtn.setAttribute('disabled', 'true');
