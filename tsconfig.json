@@ -3,6 +3,8 @@
     "target": "es2020",
     "lib": ["es2020"],
     "strict": true,
+    "moduleResolution": "bundler",
+    "module": "esnext",
     "typeRoots": [
       "./node_modules/@types",
       "./node_modules/@figma"

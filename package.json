@@ -15,6 +15,9 @@
   },
   "author": "",
   "license": "",
+  "dependencies": {
+    "design-sync-schema": "github:shivanshu-epam/Atlassian-design-system#main"
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.4",
     "@figma/eslint-plugin-figma-plugins": "*",

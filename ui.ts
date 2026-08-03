@@ -5,16 +5,17 @@
 // code.ts purely via postMessage.
 
 import type {
-  DimensionTokenValue,
+  DesignToken,
   GithubSettings,
   PluginToUIMessage,
   StorybookSyncMarker,
   SyncHistoryEntry,
   TokenCategory,
   TokenSet,
+  TokenValidationError,
   UIToPluginMessage,
 } from './shared/tokens';
-import { emptyTokenSet, TOKEN_CATEGORIES } from './shared/tokens';
+import { emptyTokenSet, normalizeLegacyBucket, resolveToken, TOKEN_CATEGORIES, validateTokenSet } from './shared/tokens';
 
 // ---------------------------------------------------------------------------
 // Messaging with code.ts
@@ -29,11 +30,13 @@ function isConfigured(settings: GithubSettings | null): settings is GithubSettin
 }
 
 let figmaTokensResolver: ((tokens: TokenSet) => void) | null = null;
+let figmaTokensRejecter: ((err: Error) => void) | null = null;
 let applyResultResolver: ((result: { success: boolean; error?: string }) => void) | null = null;
 
 function requestFigmaTokens(): Promise<TokenSet> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     figmaTokensResolver = resolve;
+    figmaTokensRejecter = reject;
     postToPlugin({ type: 'request-figma-tokens' });
   });
 }
@@ -61,10 +64,16 @@ window.onmessage = (event: MessageEvent) => {
       } else {
         // Not connected yet — ask for the GitHub repo first.
         state.activeTab = 'connect';
-        requestFigmaTokens().then((tokens) => {
-          state.figmaTokens = tokens;
-          render();
-        });
+        requestFigmaTokens()
+          .then((tokens) => {
+            state.figmaTokens = tokens;
+            render();
+          })
+          .catch((err) => {
+            state.syncError = err instanceof Error ? err.message : String(err);
+            appendLog(`Error reading Figma styles/variables: ${state.syncError}`);
+            render();
+          });
         render();
       }
       break;
@@ -73,6 +82,14 @@ window.onmessage = (event: MessageEvent) => {
       if (figmaTokensResolver) {
         figmaTokensResolver(msg.tokens);
         figmaTokensResolver = null;
+        figmaTokensRejecter = null;
+      }
+      break;
+    case 'figma-tokens-error':
+      if (figmaTokensRejecter) {
+        figmaTokensRejecter(new Error(msg.error));
+        figmaTokensResolver = null;
+        figmaTokensRejecter = null;
       }
       break;
     case 'apply-tokens-result':
@@ -97,7 +114,13 @@ interface DiffEntry {
   key: string;
   figmaValue: unknown;
   githubValue: unknown;
+  figmaDisplay: string;
+  githubDisplay: string;
   status: 'added-figma' | 'added-github' | 'modified' | 'unchanged';
+}
+
+interface SourcedValidationError extends TokenValidationError {
+  source: 'figma' | 'github';
 }
 
 const state: {
@@ -108,6 +131,7 @@ const state: {
   githubTokens: TokenSet;
   githubSha: string | null;
   diff: DiffEntry[];
+  validationErrors: SourcedValidationError[];
   resolutions: Record<string, Resolution>;
   log: string[];
   connectStatus: { ok: boolean; message: string } | null;
@@ -125,6 +149,7 @@ const state: {
   githubTokens: emptyTokenSet(),
   githubSha: null,
   diff: [],
+  validationErrors: [],
   resolutions: {},
   log: [],
   connectStatus: null,
@@ -225,13 +250,15 @@ async function fetchGithubTokens(settings: GithubSettings): Promise<{ tokens: To
   if (!rawRes.ok) {
     throw new Error(`Reading ${settings.path} contents failed: ${rawRes.status} ${rawRes.statusText}`);
   }
-  const parsed = JSON.parse(await rawRes.text()) as Partial<TokenSet>;
+  const parsed = JSON.parse(await rawRes.text()) as Partial<Record<TokenCategory, Record<string, unknown>>>;
   return {
     tokens: {
-      color: parsed.color ?? {},
-      typography: parsed.typography ?? {},
-      shadow: parsed.shadow ?? {},
-      dimension: parsed.dimension ?? {},
+      color: normalizeLegacyBucket(parsed.color, 'color') as Record<string, DesignToken<string>>,
+      typography: normalizeLegacyBucket(parsed.typography, 'typography') as TokenSet['typography'],
+      shadow: normalizeLegacyBucket(parsed.shadow, 'shadow') as TokenSet['shadow'],
+      dimension: normalizeLegacyBucket(parsed.dimension, 'dimension') as TokenSet['dimension'],
+      string: normalizeLegacyBucket(parsed.string, 'string') as TokenSet['string'],
+      boolean: normalizeLegacyBucket(parsed.boolean, 'boolean') as TokenSet['boolean'],
     },
     sha,
   };
@@ -285,6 +312,37 @@ async function commitGithubTokens(
 // Diff + sync plan
 // ---------------------------------------------------------------------------
 
+function isReferenceToken(val: unknown): boolean {
+  return !!val && typeof val === 'object' && (val as DesignToken<unknown>).$value?.kind === 'reference';
+}
+
+interface ResolvedForDiff {
+  value: unknown;
+  error: string | null;
+}
+
+// Resolves a token's value against `context` (the same-side full token set —
+// a Figma-side reference resolves against Figma's own current data, a
+// GitHub-side one against GitHub's), catching (not throwing) any broken or
+// circular reference so one bad token can't take down the whole diff.
+function resolveForDiff(category: TokenCategory, key: string, token: unknown, context: TokenSet): ResolvedForDiff {
+  if (token === undefined) return { value: undefined, error: null };
+  try {
+    return { value: resolveToken(key, category, context), error: null };
+  } catch (err) {
+    return { value: undefined, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+function formatResolved(token: unknown, resolved: ResolvedForDiff): string {
+  if (token === undefined) return '—';
+  if (resolved.error) return `⚠ ${resolved.error}`;
+  const resolvedStr = typeof resolved.value === 'string' ? resolved.value : JSON.stringify(resolved.value);
+  const t = token as DesignToken<unknown>;
+  if (t.$value?.kind === 'reference') return `→ ${t.$value.refKey} (${resolvedStr})`;
+  return resolvedStr;
+}
+
 function diffTokenSets(figmaTokens: TokenSet, githubTokens: TokenSet): DiffEntry[] {
   const entries: DiffEntry[] = [];
   for (const category of TOKEN_CATEGORIES) {
@@ -294,12 +352,32 @@ function diffTokenSets(figmaTokens: TokenSet, githubTokens: TokenSet): DiffEntry
     for (const key of keys) {
       const fVal = fCat[key];
       const gVal = gCat[key];
+      const fResolved = resolveForDiff(category, key, fVal, figmaTokens);
+      const gResolved = resolveForDiff(category, key, gVal, githubTokens);
+
       let status: DiffEntry['status'];
       if (fVal !== undefined && gVal === undefined) status = 'added-figma';
       else if (fVal === undefined && gVal !== undefined) status = 'added-github';
-      else if (JSON.stringify(fVal) !== JSON.stringify(gVal)) status = 'modified';
-      else status = 'unchanged';
-      entries.push({ category, key, figmaValue: fVal, githubValue: gVal, status });
+      else {
+        // Compare RESOLVED values, not raw $value structure — a token
+        // migrating between a flat legacy value and a live Variable
+        // reference (or a reference whose target got renamed but not
+        // re-valued) shouldn't read as a conflict when what it actually
+        // resolves to hasn't changed. A resolution failure on either side
+        // always counts as "different" — never silently treated as a match.
+        const same = !fResolved.error && !gResolved.error && JSON.stringify(fResolved.value) === JSON.stringify(gResolved.value);
+        status = same ? 'unchanged' : 'modified';
+      }
+
+      entries.push({
+        category,
+        key,
+        figmaValue: fVal,
+        githubValue: gVal,
+        figmaDisplay: formatResolved(fVal, fResolved),
+        githubDisplay: formatResolved(gVal, gResolved),
+        status,
+      });
     }
   }
   return entries;
@@ -345,6 +423,41 @@ function buildSyncPlan(
   return { final, figmaApply };
 }
 
+// Figma Styles have no alias concept, so anything headed for
+// applyTokensToFigma's color/typography/shadow writers must already be a
+// concrete value. `figmaApply` only contains a *subset* of tokens (the
+// delta), so a reference inside it might point at a token that isn't in
+// that subset — resolve against `context` (the full merged set) instead,
+// which always has everything.
+function resolveForFigmaApply(figmaApply: TokenSet, context: TokenSet): TokenSet {
+  const resolved = emptyTokenSet();
+  for (const category of ['color', 'typography', 'shadow'] as TokenCategory[]) {
+    const bucket = figmaApply[category] as Record<string, DesignToken<unknown>>;
+    const target = resolved[category] as Record<string, DesignToken<unknown>>;
+    for (const [key, token] of Object.entries(bucket)) {
+      if (token.$value.kind === 'value') {
+        target[key] = token;
+        continue;
+      }
+      try {
+        const value = resolveToken(key, category, context);
+        target[key] = { ...token, $value: { kind: 'value', value } };
+      } catch {
+        // Broken/circular reference — validateTokenSet (run before Sync is
+        // ever enabled) should have already caught this; skip defensively
+        // rather than crash the whole sync over one bad token.
+      }
+    }
+  }
+  // Dimension/string/boolean have no Figma-native alias concept either, but
+  // they're stored as our own JSON blob in plugin data, so a reference
+  // structure round-trips there just fine without resolving.
+  resolved.dimension = figmaApply.dimension;
+  resolved.string = figmaApply.string;
+  resolved.boolean = figmaApply.boolean;
+  return resolved;
+}
+
 function computeStorybookStatus() {
   if (state.storybookError) {
     state.storybookStatus = 'error';
@@ -378,13 +491,10 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-function formatValue(val: unknown): string {
-  if (val === undefined) return '—';
-  if (typeof val === 'object' && val !== null && '$value' in (val as Record<string, unknown>)) {
-    const inner = (val as { $value: unknown }).$value;
-    return typeof inner === 'string' ? inner : JSON.stringify(inner);
-  }
-  return JSON.stringify(val);
+function diffValueLine(label: string, display: string, isRef: boolean): HTMLElement {
+  const children: (Node | string)[] = [`${label}: ${display}`];
+  if (isRef) children.push(el('span', { className: 'diff-badge' }, ['REF']));
+  return el('div', {}, children);
 }
 
 // ---------------------------------------------------------------------------
@@ -497,32 +607,24 @@ function renderConnectTab(): HTMLElement {
   return container;
 }
 
-function renderTokensTab(): HTMLElement {
-  const container = el('div');
-  container.appendChild(el('h2', {}, ['Custom (dimension) tokens']));
-  container.appendChild(
-    el('p', { className: 'hint' }, [
-      'Figma has no native style type for spacing/radius/etc. without an Enterprise Variables plan, so these are tracked here and stored with the file.',
-    ]),
-  );
-
-  const entries = Object.entries(state.figmaTokens.dimension);
+// Shared editor for the two plain key/value custom-token categories
+// (dimension and string differ only in placeholder text and $type).
+function buildTextTokenEditor(
+  category: 'dimension' | 'string',
+  entries: [string, DesignToken<string>][],
+  namePlaceholder: string,
+  valuePlaceholder: string,
+): { container: HTMLElement; collect: () => Record<string, DesignToken<string>> } {
   const table = el('table', { className: 'token-table' });
-  const thead = el('tr', {}, [el('th', {}, ['Name']), el('th', {}, ['Value']), el('th', {}, [''])]);
-  table.appendChild(el('thead', {}, [thead]));
+  table.appendChild(el('thead', {}, [el('tr', {}, [el('th', {}, ['Name']), el('th', {}, ['Value']), el('th', {}, [''])])]));
   const tbody = el('tbody');
-
   const rows: { nameInput: HTMLInputElement; valueInput: HTMLInputElement }[] = [];
 
   function addRow(name: string, value: string) {
-    const nameInput = el('input', { type: 'text', value: name, placeholder: 'spacing/sm' });
-    const valueInput = el('input', { type: 'text', value, placeholder: '8px' });
+    const nameInput = el('input', { type: 'text', value: name, placeholder: namePlaceholder });
+    const valueInput = el('input', { type: 'text', value, placeholder: valuePlaceholder });
     const removeBtn = el('button', { className: 'icon-btn', textContent: '✕' });
-    const tr = el('tr', {}, [
-      el('td', {}, [nameInput]),
-      el('td', {}, [valueInput]),
-      el('td', {}, [removeBtn]),
-    ]);
+    const tr = el('tr', {}, [el('td', {}, [nameInput]), el('td', {}, [valueInput]), el('td', {}, [removeBtn])]);
     removeBtn.onclick = () => {
       tr.remove();
       const idx = rows.findIndex((r) => r.nameInput === nameInput);
@@ -532,29 +634,150 @@ function renderTokensTab(): HTMLElement {
     rows.push({ nameInput, valueInput });
   }
 
-  for (const [name, token] of entries) addRow(name, token.$value);
+  for (const [name, token] of entries) {
+    if (token.$value.kind === 'value') addRow(name, token.$value.value);
+  }
   table.appendChild(tbody);
-  container.appendChild(table);
 
   const addBtn = el('button', { textContent: '+ Add token' });
   addBtn.onclick = () => addRow('', '');
 
-  const saveBtn = el('button', { className: 'primary', textContent: 'Save' });
-  saveBtn.onclick = () => {
-    const dimension: Record<string, DimensionTokenValue> = {};
+  const container = el('div', {}, [table, el('div', { className: 'btn-row' }, [addBtn])]);
+
+  const collect = (): Record<string, DesignToken<string>> => {
+    const out: Record<string, DesignToken<string>> = {};
     for (const { nameInput, valueInput } of rows) {
       const name = nameInput.value.trim();
       const value = valueInput.value.trim();
       if (!name || !value) continue;
-      dimension[name] = { $type: 'dimension', $value: value };
+      out[name] = { $type: category, $value: { kind: 'value', value } };
     }
-    state.figmaTokens.dimension = dimension;
-    postToPlugin({ type: 'save-dimension-tokens', dimension });
-    appendLog(`Saved ${Object.keys(dimension).length} custom token(s) to the Figma file.`);
+    return out;
   };
 
-  container.appendChild(el('div', { className: 'btn-row' }, [addBtn, saveBtn]));
+  return { container, collect };
+}
+
+function buildBooleanTokenEditor(entries: [string, DesignToken<boolean>][]): {
+  container: HTMLElement;
+  collect: () => Record<string, DesignToken<boolean>>;
+} {
+  const table = el('table', { className: 'token-table' });
+  table.appendChild(el('thead', {}, [el('tr', {}, [el('th', {}, ['Name']), el('th', {}, ['Value']), el('th', {}, [''])])]));
+  const tbody = el('tbody');
+  const rows: { nameInput: HTMLInputElement; valueInput: HTMLInputElement }[] = [];
+
+  function addRow(name: string, value: boolean) {
+    const nameInput = el('input', { type: 'text', value: name, placeholder: 'isDarkModeDefault' });
+    const valueInput = el('input', { type: 'checkbox', checked: value });
+    const removeBtn = el('button', { className: 'icon-btn', textContent: '✕' });
+    const tr = el('tr', {}, [el('td', {}, [nameInput]), el('td', {}, [valueInput]), el('td', {}, [removeBtn])]);
+    removeBtn.onclick = () => {
+      tr.remove();
+      const idx = rows.findIndex((r) => r.nameInput === nameInput);
+      if (idx >= 0) rows.splice(idx, 1);
+    };
+    tbody.appendChild(tr);
+    rows.push({ nameInput, valueInput });
+  }
+
+  for (const [name, token] of entries) {
+    if (token.$value.kind === 'value') addRow(name, token.$value.value);
+  }
+  table.appendChild(tbody);
+
+  const addBtn = el('button', { textContent: '+ Add token' });
+  addBtn.onclick = () => addRow('', false);
+
+  const container = el('div', {}, [table, el('div', { className: 'btn-row' }, [addBtn])]);
+
+  const collect = (): Record<string, DesignToken<boolean>> => {
+    const out: Record<string, DesignToken<boolean>> = {};
+    for (const { nameInput, valueInput } of rows) {
+      const name = nameInput.value.trim();
+      if (!name) continue;
+      out[name] = { $type: 'boolean', $value: { kind: 'value', value: valueInput.checked } };
+    }
+    return out;
+  };
+
+  return { container, collect };
+}
+
+function renderTokensTab(): HTMLElement {
+  const container = el('div');
+  container.appendChild(el('h2', {}, ['Custom tokens']));
+  container.appendChild(
+    el('p', { className: 'hint' }, [
+      'Figma has no native style type for spacing/radius, arbitrary strings, or booleans without an Enterprise Variables plan, so these are tracked here and stored with the file.',
+    ]),
+  );
+
+  const dimensionHeading = el('h2', {}, ['Dimension']);
+  dimensionHeading.style.marginTop = '14px';
+  container.appendChild(dimensionHeading);
+  const dimensionEditor = buildTextTokenEditor(
+    'dimension',
+    Object.entries(state.figmaTokens.dimension),
+    'spacing/sm',
+    '8px',
+  );
+  container.appendChild(dimensionEditor.container);
+
+  const stringHeading = el('h2', {}, ['String']);
+  stringHeading.style.marginTop = '14px';
+  container.appendChild(stringHeading);
+  const stringEditor = buildTextTokenEditor(
+    'string',
+    Object.entries(state.figmaTokens.string),
+    'font/primary-family',
+    'Inter',
+  );
+  container.appendChild(stringEditor.container);
+
+  const booleanHeading = el('h2', {}, ['Boolean']);
+  booleanHeading.style.marginTop = '14px';
+  container.appendChild(booleanHeading);
+  const booleanEditor = buildBooleanTokenEditor(Object.entries(state.figmaTokens.boolean));
+  container.appendChild(booleanEditor.container);
+
+  const saveBtn = el('button', { className: 'primary', textContent: 'Save all' });
+  saveBtn.onclick = () => {
+    const dimension = dimensionEditor.collect();
+    const string = stringEditor.collect();
+    const boolean = booleanEditor.collect();
+    state.figmaTokens.dimension = dimension;
+    state.figmaTokens.string = string;
+    state.figmaTokens.boolean = boolean;
+    postToPlugin({ type: 'save-custom-tokens', dimension, string, boolean });
+    appendLog(
+      `Saved ${Object.keys(dimension).length} dimension, ${Object.keys(string).length} string, ${Object.keys(boolean).length} boolean custom token(s).`,
+    );
+  };
+  const saveRow = el('div', { className: 'btn-row' }, [saveBtn]);
+  saveRow.style.marginTop = '10px';
+  container.appendChild(saveRow);
+
   return container;
+}
+
+function renderValidationErrors(): HTMLElement | null {
+  if (state.validationErrors.length === 0) return null;
+  const box = el('div', { className: 'status-banner error' });
+  box.appendChild(
+    el('div', {}, [
+      `${state.validationErrors.length} token reference problem${state.validationErrors.length === 1 ? '' : 's'} — these specific tokens need a manual choice below, everything else will sync normally:`,
+    ]),
+  );
+  const list = el('ul');
+  for (const e of state.validationErrors.slice(0, 10)) {
+    list.appendChild(el('li', {}, [`${e.source} · ${e.category}/${e.key} — ${e.message}`]));
+  }
+  box.appendChild(list);
+  if (state.validationErrors.length > 10) {
+    box.appendChild(el('div', {}, [`…and ${state.validationErrors.length - 10} more.`]));
+  }
+  return box;
 }
 
 function renderSyncTab(): HTMLElement {
@@ -576,6 +799,8 @@ function renderSyncTab(): HTMLElement {
   if (state.syncError) {
     container.appendChild(el('div', { className: 'status-banner error' }, [state.syncError]));
   }
+  const validationBanner = renderValidationErrors();
+  if (validationBanner) container.appendChild(validationBanner);
 
   if (state.comparing && state.diff.length === 0) {
     container.appendChild(el('div', { className: 'empty-state' }, ['Comparing Figma styles with GitHub…']));
@@ -586,19 +811,49 @@ function renderSyncTab(): HTMLElement {
     if (changed.length === 0) {
       container.appendChild(el('div', { className: 'status-banner success' }, ['Figma and GitHub are already in sync.']));
     } else {
-      const bulkRow = el('div', { className: 'btn-row' });
-      const useAllFigma = el('button', { textContent: 'Use all Figma (conflicts)' });
-      useAllFigma.onclick = () => {
-        for (const d of changed) if (d.status === 'modified') state.resolutions[`${d.category}:${d.key}`] = 'figma';
-        render();
-      };
-      const useAllGithub = el('button', { textContent: 'Use all GitHub (conflicts)' });
-      useAllGithub.onclick = () => {
-        for (const d of changed) if (d.status === 'modified') state.resolutions[`${d.category}:${d.key}`] = 'github';
-        render();
-      };
-      bulkRow.append(useAllFigma, useAllGithub);
-      container.appendChild(bulkRow);
+      const addedCount = changed.filter((d) => d.status !== 'modified').length;
+      const conflictCount = changed.filter((d) => d.status === 'modified').length;
+
+      if (addedCount > 0) {
+        const selectRow = el('div', { className: 'btn-row' });
+        const selectAll = el('button', { className: 'primary', textContent: `Select all (${addedCount} new)` });
+        selectAll.onclick = () => {
+          for (const d of changed) {
+            if (d.status !== 'modified') delete state.resolutions[`${d.category}:${d.key}`];
+          }
+          render();
+        };
+        const selectNone = el('button', { textContent: 'Deselect all' });
+        selectNone.onclick = () => {
+          for (const d of changed) {
+            if (d.status !== 'modified') state.resolutions[`${d.category}:${d.key}`] = 'skip';
+          }
+          render();
+        };
+        selectRow.append(selectAll, selectNone);
+        container.appendChild(selectRow);
+        container.appendChild(
+          el('p', { className: 'hint' }, [
+            'New tokens (from either side) are included by default — uncheck individual rows below, or use these to bulk-select.',
+          ]),
+        );
+      }
+
+      if (conflictCount > 0) {
+        const bulkRow = el('div', { className: 'btn-row' });
+        const useAllFigma = el('button', { textContent: 'Use all Figma (conflicts)' });
+        useAllFigma.onclick = () => {
+          for (const d of changed) if (d.status === 'modified') state.resolutions[`${d.category}:${d.key}`] = 'figma';
+          render();
+        };
+        const useAllGithub = el('button', { textContent: 'Use all GitHub (conflicts)' });
+        useAllGithub.onclick = () => {
+          for (const d of changed) if (d.status === 'modified') state.resolutions[`${d.category}:${d.key}`] = 'github';
+          render();
+        };
+        bulkRow.append(useAllFigma, useAllGithub);
+        container.appendChild(bulkRow);
+      }
 
       for (const category of TOKEN_CATEGORIES) {
         const rows = changed.filter((d) => d.category === category);
@@ -609,15 +864,22 @@ function renderSyncTab(): HTMLElement {
         container.appendChild(group);
       }
 
+      // Broken/circular references (state.validationErrors) are NOT a
+      // reason to block syncing the other 11,000+ tokens that are fine —
+      // each broken one already shows up below as its own "modified" row
+      // (its resolved value can't be compared, so it can't read as
+      // "unchanged" either) and gets Skipped/resolved like any other
+      // conflict. Only genuinely unresolved conflicts block Sync.
       const remaining = unresolvedConflictCount();
+      const blocked = remaining > 0 || state.syncing;
       const syncBtn = el('button', {
         className: 'cta',
         textContent: state.syncing ? 'Syncing…' : 'Sync (write to GitHub & Figma)',
       });
-      if (remaining > 0 || state.syncing) syncBtn.setAttribute('disabled', 'true');
+      if (blocked) syncBtn.setAttribute('disabled', 'true');
       syncBtn.onclick = () => runSync();
       container.appendChild(el('div', { className: 'btn-row' }, [syncBtn]));
-      if (remaining > 0) {
+      if (!state.syncing && remaining > 0) {
         container.appendChild(
           el('p', { className: 'hint' }, [`Resolve ${remaining} conflicting token${remaining === 1 ? '' : 's'} before syncing.`]),
         );
@@ -635,8 +897,8 @@ function renderDiffRow(d: DiffEntry): HTMLElement {
   row.appendChild(el('div', { className: 'diff-key' }, [d.key, el('span', { className: 'diff-badge' }, [badgeText])]));
   row.appendChild(
     el('div', { className: 'diff-values' }, [
-      el('div', {}, [`Figma: ${formatValue(d.figmaValue)}`]),
-      el('div', {}, [`GitHub: ${formatValue(d.githubValue)}`]),
+      diffValueLine('Figma', d.figmaDisplay, isReferenceToken(d.figmaValue)),
+      diffValueLine('GitHub', d.githubDisplay, isReferenceToken(d.githubValue)),
     ]),
   );
 
@@ -661,15 +923,18 @@ function renderDiffRow(d: DiffEntry): HTMLElement {
     row.appendChild(controls);
   } else if (d.status === 'added-figma' || d.status === 'added-github') {
     const resKey = `${d.category}:${d.key}`;
-    const skipped = state.resolutions[resKey] === 'skip';
+    // Included by default (no resolution stored at all) — this checkbox is
+    // an opt-OUT, not a decision that has to be made. Checked = will sync,
+    // matching what actually happens if you never touch it.
+    const included = state.resolutions[resKey] !== 'skip';
     const controls = el('div', { className: 'resolution-controls' });
-    const id = `${resKey}:skip-toggle`;
-    const checkbox = el('input', { type: 'checkbox', id, checked: skipped });
+    const id = `${resKey}:include-toggle`;
+    const checkbox = el('input', { type: 'checkbox', id, checked: included });
     checkbox.onchange = () => {
-      if (checkbox.checked) state.resolutions[resKey] = 'skip';
-      else delete state.resolutions[resKey];
+      if (checkbox.checked) delete state.resolutions[resKey];
+      else state.resolutions[resKey] = 'skip';
     };
-    controls.appendChild(el('label', { htmlFor: id }, [checkbox, ' Skip this token']));
+    controls.appendChild(el('label', { htmlFor: id }, [checkbox, ' Include in sync']));
     row.appendChild(controls);
   }
 
@@ -772,6 +1037,8 @@ function renderStatusTab(): HTMLElement {
   if (state.syncError) {
     container.appendChild(el('div', { className: 'status-banner error' }, [state.syncError]));
   }
+  const validationBanner = renderValidationErrors();
+  if (validationBanner) container.appendChild(validationBanner);
 
   if (state.diff.length === 0 && state.storybookStatus === 'unknown') {
     container.appendChild(
@@ -812,8 +1079,8 @@ function renderStatusTab(): HTMLElement {
       tbody.appendChild(
         el('tr', {}, [
           el('td', {}, [`${d.category}/${d.key}`]),
-          el('td', {}, [formatValue(d.figmaValue)]),
-          el('td', {}, [formatValue(d.githubValue)]),
+          el('td', {}, [d.figmaDisplay]),
+          el('td', {}, [d.githubDisplay]),
           el('td', {}, [DIFF_STATUS_LABEL[d.status]]),
         ]),
       );
@@ -846,6 +1113,7 @@ async function runCompare() {
   state.syncError = null;
   state.storybookError = null;
   state.diff = [];
+  state.validationErrors = [];
   state.resolutions = {};
   render();
   try {
@@ -865,10 +1133,19 @@ async function runCompare() {
     state.storybookMarker = marker;
     computeStorybookStatus();
 
+    // Broken/circular references must block syncing outright — surfacing
+    // them as a normal "conflict" wouldn't make sense, there's no value to
+    // pick between.
+    state.validationErrors = [
+      ...validateTokenSet(state.figmaTokens).map((e) => ({ ...e, source: 'figma' as const })),
+      ...validateTokenSet(state.githubTokens).map((e) => ({ ...e, source: 'github' as const })),
+    ];
+
     state.diff = diffTokenSets(state.figmaTokens, state.githubTokens);
     const changed = state.diff.filter((d) => d.status !== 'unchanged').length;
     appendLog(
-      `Compared: ${state.diff.length} token(s) total, ${changed} changed. Storybook: ${state.storybookStatus}.`,
+      `Compared: ${state.diff.length} token(s) total, ${changed} changed. Storybook: ${state.storybookStatus}.` +
+        (state.validationErrors.length > 0 ? ` ${state.validationErrors.length} validation error(s).` : ''),
     );
   } catch (err) {
     state.syncError = err instanceof Error ? err.message : String(err);
@@ -886,10 +1163,13 @@ async function runSync() {
   render();
   try {
     const { final, figmaApply } = buildSyncPlan(state.figmaTokens, state.githubTokens, state.resolutions);
-    // Dimension tokens have no per-key native style — the whole set lives in
-    // one plugin-data blob, so it must always be replaced in full rather
-    // than patched with just the delta like color/typography/shadow are.
+    // Dimension/string/boolean tokens have no per-key native style — the
+    // whole set lives in one plugin-data blob, so it must always be
+    // replaced in full rather than patched with just the delta like
+    // color/typography/shadow are.
     figmaApply.dimension = final.dimension;
+    figmaApply.string = final.string;
+    figmaApply.boolean = final.boolean;
 
     appendLog('Committing merged tokens to GitHub…');
     const commit = await commitGithubTokens(state.settings, final, state.githubSha);
@@ -913,7 +1193,8 @@ async function runSync() {
     postToPlugin({ type: 'save-history', entry: historyEntry });
 
     appendLog('Applying changes to Figma styles…');
-    const result = await applyTokensToFigma(figmaApply);
+    const resolvedApply = resolveForFigmaApply(figmaApply, final);
+    const result = await applyTokensToFigma(resolvedApply);
     if (!result.success) {
       throw new Error(
         `GitHub was updated (commit ${commit.sha.slice(0, 7)}), but applying changes back to Figma failed: ${
@@ -928,9 +1209,18 @@ async function runSync() {
     appendLog(`Error: ${state.syncError}`);
   } finally {
     // Always reconcile against whatever actually happened, even on a
-    // partial failure above.
-    state.figmaTokens = await requestFigmaTokens();
-    state.diff = diffTokenSets(state.figmaTokens, state.githubTokens);
+    // partial failure above — but don't let a failure *here* mask whatever
+    // error the try block already recorded, or go unhandled entirely
+    // (runSync() itself is fired from an onclick with no .catch()).
+    try {
+      state.figmaTokens = await requestFigmaTokens();
+      state.diff = diffTokenSets(state.figmaTokens, state.githubTokens);
+    } catch (err) {
+      if (!state.syncError) {
+        state.syncError = err instanceof Error ? err.message : String(err);
+        appendLog(`Error re-reading Figma after sync: ${state.syncError}`);
+      }
+    }
     state.syncing = false;
     render();
   }
