@@ -9,6 +9,31 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.7.0] - 2026-08-04
+
+### Changed
+- **Readability overhaul of diff/history rows** — the main source of "I
+  can't read this" feedback. Figma/GitHub values previously sat
+  side-by-side in two ~180px flex columns at 10px monospace inside the
+  420px panel; any reference path or long hex string was nearly
+  unreadable at that width. Each value now gets its own full-width line
+  with a colored `FIGMA`/`GITHUB` label chip (green/blue, matching the
+  existing added-figma/added-github border colors elsewhere), stacked
+  vertically instead of squeezed side by side, at 12px instead of 10px.
+  Same treatment for History tab entries: key on its own line, `before →
+  after` on the next, instead of a cramped two-column row.
+- Base body font size 12px → 13px with `line-height: 1.45` (previously
+  unset, defaulting to a cramped ~1.2). Several small-text elements
+  (status banners, hints, table cells, buttons, the log panel) bumped
+  from 9–11px to 11.5–13px — the 9–9.5px sizes are now reserved for
+  genuine micro-labels (badges, table headers), not body content.
+- Fixed a real layout bug found while visually verifying this in the
+  browser preview: the `REF` badge on a reference row had no
+  `flex-shrink: 0`, so on a wrapped `.diff-value-line` it got squeezed
+  into a single-character-wide column and rendered "R / E / F" stacked
+  vertically. `.diff-value-line` now wraps properly (`flex-wrap: wrap`)
+  with the badge and label both pinned to their natural width.
+
 ## [1.6.1] - 2026-08-04
 
 ### Fixed

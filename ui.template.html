@@ -74,7 +74,8 @@
   body {
     margin: 0;
     font-family: 'Source Sans Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    font-size: 12px;
+    font-size: 13px;
+    line-height: 1.45;
     color: var(--text);
     background: var(--bg);
   }
@@ -118,7 +119,7 @@
     font-size: 9.5px;
     text-align: right;
   }
-  h2 { font-size: 11px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 700; }
+  h2 { font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 700; }
   .section-divider { border: none; border-top: 1px solid var(--border); margin: 18px 0 14px; }
   .required-mark { color: var(--danger); margin-left: 3px; }
   .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
@@ -130,7 +131,7 @@
     background: var(--surface);
     color: var(--text);
     font-family: inherit;
-    font-size: 12px;
+    font-size: 13px;
   }
   .field input::placeholder { color: var(--text-placeholder); }
   .field input:focus, .field select:focus, table.token-table input:focus {
@@ -142,7 +143,7 @@
   .row > * { flex: 1; }
   button {
     font-family: inherit;
-    font-size: 12px;
+    font-size: 12.5px;
     font-weight: 600;
     padding: 7px 13px;
     border-radius: var(--radius);
@@ -162,47 +163,110 @@
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   button + button { margin-left: 6px; }
   .btn-row { margin-top: 10px; display: flex; }
-  .hint { color: var(--text-muted); font-size: 11px; margin-top: 4px; }
-  .status-banner { padding: 8px 10px; border-radius: var(--radius); margin-bottom: 10px; font-size: 11px; border: 1px solid transparent; }
+  .hint { color: var(--text-muted); font-size: 11.5px; margin-top: 4px; }
+  .status-banner { padding: 9px 11px; border-radius: var(--radius); margin-bottom: 10px; font-size: 12px; line-height: 1.5; border: 1px solid transparent; }
   .status-banner.success { background: var(--success-bg); color: var(--success-text); border-color: var(--cta); }
   .status-banner.error { background: var(--danger-bg); color: var(--text); border-color: var(--danger); }
   .status-banner ul { margin: 4px 0 0; padding: 0 0 0 16px; }
   .status-banner li { margin-bottom: 2px; }
   table.token-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
   table.token-table th, table.token-table td {
-    text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--border); font-size: 11px;
+    text-align: left; padding: 6px 7px; border-bottom: 1px solid var(--border); font-size: 12px;
   }
-  table.token-table th { color: var(--text-muted); font-weight: 700; text-transform: uppercase; font-size: 9.5px; letter-spacing: 0.04em; }
-  table.token-table input { width: 100%; padding: 4px 6px; font-size: 11px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); font-family: inherit; }
+  table.token-table th { color: var(--text-muted); font-weight: 700; text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; }
+  table.token-table input { width: 100%; padding: 4px 6px; font-size: 12px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); color: var(--text); font-family: inherit; }
   .icon-btn { padding: 3px 7px; font-size: 11px; }
-  .diff-group { margin-bottom: 14px; }
-  .diff-row { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px; margin-bottom: 6px; background: var(--surface); }
+
+  /* Diff rows (Sync tab conflicts, History tab entries) — the part of the
+     UI most reported as hard to read. Figma/GitHub values used to sit
+     side-by-side in two ~180px columns at 10px monospace, which made any
+     reference path or long hex string nearly unreadable. Each value now
+     gets its own full-width line with a colored label chip, stacked
+     vertically, at a size that's actually comfortable to read. */
+  .diff-group { margin-bottom: 16px; }
+  .diff-row { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 11px; margin-bottom: 8px; background: var(--surface); }
   .diff-row.status-added-figma { border-left: 3px solid var(--cta); }
   .diff-row.status-added-github { border-left: 3px solid var(--accent); }
   .diff-row.status-modified { border-left: 3px solid var(--warn); background: var(--warn-bg); }
-  .diff-row.cascade-only { border-left-color: var(--border); background: var(--surface); opacity: 0.75; }
-  .diff-key { font-weight: 600; margin-bottom: 4px; }
-  .diff-badge { font-size: 9px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-muted); margin-left: 6px; }
-  .diff-values { display: flex; gap: 10px; font-family: ui-monospace, monospace; font-size: 10px; color: var(--text-muted); margin-bottom: 6px; }
-  .diff-values > div { flex: 1; overflow-wrap: anywhere; }
-  .resolution-controls label { margin-right: 10px; font-weight: 400; }
-  .cascade-note { color: var(--text-muted); font-size: 10.5px; font-style: italic; margin: 0; }
-  .audit-change-row { display: flex; gap: 10px; font-family: ui-monospace, monospace; font-size: 10px; color: var(--text-muted); padding: 2px 0; }
-  .audit-change-key { flex: 1; overflow-wrap: anywhere; font-weight: 600; }
-  .audit-change-values { flex: 1; overflow-wrap: anywhere; }
-  .empty-state { color: var(--text-muted); text-align: center; padding: 24px 0; }
+  .diff-row.cascade-only { border-left-color: var(--border); background: var(--surface); opacity: 0.8; }
+  .diff-key { font-weight: 700; font-size: 12.5px; margin-bottom: 7px; overflow-wrap: anywhere; }
+  .diff-badge {
+    display: inline-block;
+    font-size: 9.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    color: var(--text-muted);
+    background: var(--bg-subtle);
+    border-radius: 2px;
+    padding: 1px 5px;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  .diff-values { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
+  .diff-value-line {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 7px;
+    font-family: ui-monospace, 'SF Mono', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .diff-value-label {
+    flex-shrink: 0;
+    white-space: nowrap;
+    font-family: inherit;
+    font-size: 9.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    padding: 2px 6px;
+    border-radius: 2px;
+    color: #ffffff;
+  }
+  .diff-value-label.figma { background: var(--cta); }
+  .diff-value-label.github { background: var(--accent); }
+  .diff-value-text { color: var(--text); overflow-wrap: anywhere; flex: 1 1 auto; min-width: 0; }
+  .diff-value-line .diff-badge { flex-shrink: 0; white-space: nowrap; align-self: center; }
+  .resolution-controls { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  .resolution-controls label { font-weight: 500; font-size: 12px; }
+  .cascade-note { color: var(--text-muted); font-size: 11.5px; font-style: italic; margin: 0; line-height: 1.5; }
+
+  .audit-change-row {
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .audit-change-row:last-child { border-bottom: none; }
+  .audit-change-key {
+    font-weight: 700;
+    font-size: 11.5px;
+    color: var(--text-muted);
+    overflow-wrap: anywhere;
+    margin-bottom: 3px;
+  }
+  .audit-change-values {
+    font-family: ui-monospace, 'SF Mono', monospace;
+    font-size: 12px;
+    color: var(--text);
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+  }
+
+  .empty-state { color: var(--text-muted); text-align: center; padding: 24px 0; font-size: 12.5px; line-height: 1.5; }
   pre#log {
     background: var(--bg-subtle);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 8px;
-    font-size: 10px;
+    padding: 9px;
+    font-size: 11px;
+    line-height: 1.5;
     max-height: 140px;
     overflow-y: auto;
     white-space: pre-wrap;
     margin-top: 10px;
   }
-  .history-item { font-size: 11px; padding: 5px 0; border-bottom: 1px solid var(--border); }
+  .history-item { font-size: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); }
   .history-item a { color: var(--accent); }
   details.setup-guide {
     border: 1px solid var(--border);

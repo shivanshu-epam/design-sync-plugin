@@ -625,10 +625,13 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
-function diffValueLine(label: string, display: string, isRef: boolean): HTMLElement {
-  const children: (Node | string)[] = [`${label}: ${display}`];
+function diffValueLine(label: 'Figma' | 'GitHub', display: string, isRef: boolean): HTMLElement {
+  const children: (Node | string)[] = [
+    el('span', { className: `diff-value-label ${label.toLowerCase()}` }, [label]),
+    el('span', { className: 'diff-value-text' }, [display]),
+  ];
   if (isRef) children.push(el('span', { className: 'diff-badge' }, ['REF']));
-  return el('div', {}, children);
+  return el('div', { className: 'diff-value-line' }, children);
 }
 
 // ---------------------------------------------------------------------------
@@ -1848,8 +1851,8 @@ async function runRevert(entry: AuditEntry) {
 function renderAuditChangeRow(c: AuditChange): HTMLElement {
   const format = (v: unknown) => (v === undefined ? '—' : typeof v === 'string' ? v : JSON.stringify(v));
   return el('div', { className: 'audit-change-row' }, [
-    el('span', { className: 'audit-change-key' }, [`${c.category}/${c.key}`]),
-    el('span', { className: 'audit-change-values' }, [`${format(c.previousValue)} → ${format(c.newValue)}`]),
+    el('div', { className: 'audit-change-key' }, [`${c.category}/${c.key}`]),
+    el('div', { className: 'audit-change-values' }, [`${format(c.previousValue)} → ${format(c.newValue)}`]),
   ]);
 }
 
