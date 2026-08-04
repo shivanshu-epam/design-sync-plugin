@@ -41,6 +41,23 @@ build time).
   and the divergent per-category handling wasn't earning its complexity
   since Custom Tokens tab entries are effectively always already concrete.
 
+### Fixed
+- **"Use GitHub" resolutions for a variable-backed token silently fell
+  back to a Style instead of writing the Variable — found by testing
+  before push.** Which side's value wins a conflict is unrelated to
+  whether a token is variable-backed, but `figmaApply` was carrying
+  whichever side's *whole token object* won, `$extensions` included — so
+  a "Use GitHub" resolution used GitHub's copy of `$extensions`, which is
+  stale (or missing `modeId` entirely) for any token synced before this
+  release. `applyVariableValue` correctly declined to write without both
+  ids, so it fell back to a Style — invisible in the actual design, since
+  nothing there is bound to that Style, only the Variable. Fixed with
+  `preferLiveFigmaExtensions`: Figma's own current `$extensions` for a key
+  (freshly read this session, so it does have `modeId`) now always wins
+  over whichever side's value was chosen, since variable identity is a
+  fact about Figma's current state, not something that should travel
+  with the winning value.
+
 ### Known limitation
 - Write-back always resolves to a concrete value, even when writing to a
   real Variable — it does not (yet) write a native `VARIABLE_ALIAS` for a

@@ -400,6 +400,23 @@ gets rebuilt or extended later.
     current variable names, and by actually writing the value back via
     `variable.setValueForMode` when that's what it points at.
 
+11. **"Use GitHub" resolutions for a variable-backed token silently fell
+    back to a Style, found by testing before push.** Which side's value
+    wins a conflict is unrelated to whether a token is variable-backed —
+    but `figmaApply[key]` was set to whichever side's whole token object
+    won, `$extensions` included. So a "Use GitHub" resolution carried
+    GitHub's stored `$extensions`, which is stale (or missing `modeId`
+    entirely, for every token synced before this session) even though
+    Figma's own copy of the same key, read moments earlier, has a
+    perfectly good `variableId`/`modeId`. `applyVariableValue` correctly
+    declined without both ids and fell back to a Style — invisible in the
+    actual design, since nothing there is bound to that Style, only the
+    Variable, which is exactly why it looked like "nothing happened."
+    Fixed by `preferLiveFigmaExtensions()`: Figma's own current
+    `$extensions` for a key always wins over whichever side's *value* was
+    chosen, since variable identity is a fact about Figma's current
+    state, not something that should travel along with the winning value.
+
 ---
 
 ## 11. What's explicitly out of scope (for now)

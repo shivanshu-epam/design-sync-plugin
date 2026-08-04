@@ -565,6 +565,31 @@ function buildSyncPlan(
   return { final, figmaApply };
 }
 
+// Whether a token was originally read from a Figma Variable — and if so,
+// which variable/mode — is a fact about Figma's *current* state. It must
+// not depend on which side's value won a conflict: if "Use GitHub" wins,
+// figmaApply's token carries GitHub's stored $extensions, which can be
+// stale or missing modeId entirely (e.g. every token synced before that
+// field existed, or a token someone hand-edited directly on GitHub). If
+// Figma currently has this exact key as a variable, code.ts needs to know
+// that regardless of whose value is being written — otherwise a
+// "Use GitHub" resolution for a variable-backed token silently degrades
+// to creating a same-named Style instead of updating the variable, with
+// no visible change to whatever's actually bound to that variable in the
+// design.
+function preferLiveFigmaExtensions(figmaApply: TokenSet, figmaTokens: TokenSet): void {
+  for (const category of ['color', 'dimension', 'string', 'boolean'] as const) {
+    const applyBucket = figmaApply[category] as Record<string, DesignToken<unknown>>;
+    const figmaBucket = figmaTokens[category] as Record<string, DesignToken<unknown>>;
+    for (const [key, token] of Object.entries(applyBucket)) {
+      const liveExt = figmaBucket[key]?.$extensions;
+      if (liveExt?.['design-sync.figmaSourceType'] === 'variable' && liveExt['design-sync.variableId'] && liveExt['design-sync.modeId']) {
+        applyBucket[key] = { ...token, $extensions: liveExt };
+      }
+    }
+  }
+}
+
 // Neither Figma Styles nor Figma Variables understand our reference
 // structure — a Style write needs a concrete value outright, and while a
 // Variable write-back *could* in principle write a native VARIABLE_ALIAS
@@ -1647,6 +1672,7 @@ async function runSync() {
     figmaApply.dimension = final.dimension;
     figmaApply.string = final.string;
     figmaApply.boolean = final.boolean;
+    preferLiveFigmaExtensions(figmaApply, state.figmaTokens);
 
     // Sync opens a PR against settings.branch instead of committing to it
     // directly — nothing lands on the branch Storybook/downstream builds
