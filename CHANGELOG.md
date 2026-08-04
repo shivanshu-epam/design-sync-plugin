@@ -9,6 +9,16 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.2.1] - 2026-08-04
+
+### Fixed
+- If opening the sync PR fails (e.g. "403 Resource not accessible by
+  personal access token" — the PAT is missing `Pull requests: read/write`),
+  the branch + commit that already succeeded are no longer left behind as
+  an orphaned `design-sync/sync-*` branch. It's deleted (best-effort)
+  before the original error is re-thrown, so a retry after fixing the
+  token starts clean instead of accumulating dead branches.
+
 ## [1.2.0] - 2026-08-04
 
 ### Changed

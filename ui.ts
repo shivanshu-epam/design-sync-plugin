@@ -371,6 +371,17 @@ async function createBranch(settings: GithubSettings, branch: string, fromSha: s
   }
 }
 
+async function deleteBranch(settings: GithubSettings, branch: string): Promise<void> {
+  await githubRequest(
+    `/repos/${settings.owner}/${settings.repo}/git/refs/heads/${encodeURIComponent(branch)}`,
+    settings,
+    { method: 'DELETE' },
+  );
+  // Best-effort cleanup only — if this itself fails (e.g. the token also
+  // lacks delete access), the caller's real error is what the user needs
+  // to see, not this one, so failures here are swallowed by the caller.
+}
+
 async function createPullRequest(
   settings: GithubSettings,
   head: string,
@@ -1466,12 +1477,23 @@ async function runSync() {
 
     const changedCount = state.diff.filter((d) => d.status !== 'unchanged' && !(state.resolutions[`${d.category}:${d.key}`] === 'skip')).length;
     appendLog('Opening pull request…');
-    const pr = await createPullRequest(
-      settings,
-      branch,
-      'Design Sync: update design tokens',
-      `Opened by the Design Sync Figma plugin. ${changedCount} token(s) resolved.\n\nMerging this brings \`${settings.path}\` in line with the current Figma file.`,
-    );
+    let pr: { number: number; url: string };
+    try {
+      pr = await createPullRequest(
+        settings,
+        branch,
+        'Design Sync: update design tokens',
+        `Opened by the Design Sync Figma plugin. ${changedCount} token(s) resolved.\n\nMerging this brings \`${settings.path}\` in line with the current Figma file.`,
+      );
+    } catch (err) {
+      // The branch + commit above already succeeded — leaving it behind
+      // would just accumulate dead `design-sync/sync-*` branches every
+      // time this fails (e.g. a PAT missing Pull requests: write). Clean
+      // it up so a retry starts fresh instead of leaving orphans.
+      appendLog(`Opening pull request failed — deleting branch ${branch}…`);
+      await deleteBranch(settings, branch).catch(() => {});
+      throw err;
+    }
     appendLog(`Opened PR #${pr.number}.`);
 
     state.resolutions = {};
