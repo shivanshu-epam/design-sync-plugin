@@ -9,6 +9,28 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.4.2] - 2026-08-04
+
+### Changed
+- **Sync tab no longer presents reference-cascade rows as equal-weight
+  conflicts.** Found via a real case: editing 4 primitive color tokens
+  produced 7 "Conflict" rows in the diff — the other 3 were `badge-bg`
+  entries that reference one of the edited primitives (marked `REF`),
+  whose own stored value never changed, only what it resolves to. The
+  diff already compares *resolved* values (by design — a reference
+  should read as changed when its target changes), but the actual merge
+  (`buildSyncPlan`) compares *raw* stored values first and short-circuits
+  to "unchanged" before ever consulting a resolution — so for a row like
+  this, clicking Use Figma/Use GitHub/Skip has no effect on what's
+  actually written. Showing three active buttons that do nothing is
+  misleading. `DiffEntry` now carries a `cascadeOnly` flag (raw values
+  identical, only the resolved value differs) computed with the same
+  check `buildSyncPlan` uses, so it can't drift out of sync with what the
+  merge actually does. A cascade-only row renders as an inert,
+  lower-emphasis note ("resolves automatically once you handle its
+  underlying primitive") instead of resolution controls, and is excluded
+  from conflict counts and the "Use all Figma/GitHub" bulk actions.
+
 ## [1.4.1] - 2026-08-04
 
 ### Fixed

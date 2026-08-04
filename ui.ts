@@ -117,6 +117,17 @@ interface DiffEntry {
   figmaDisplay: string;
   githubDisplay: string;
   status: 'added-figma' | 'added-github' | 'modified' | 'unchanged';
+  // True only when status is 'modified' AND the two sides' raw $value are
+  // byte-identical (e.g. a reference token whose refKey didn't change, but
+  // what it resolves to did because the thing it points at changed
+  // elsewhere in this same diff). buildSyncPlan's merge does the identical
+  // raw-value check before ever consulting a resolution, so a cascade-only
+  // row's resolution button is inert — it can't affect what actually gets
+  // written. Kept separate from 'modified' rather than its own status so
+  // every existing `status === 'modified'` check still includes it for
+  // "did this key's rendered value change" purposes; only the parts that
+  // care about "does a decision here matter" need to branch on this.
+  cascadeOnly: boolean;
 }
 
 interface SourcedValidationError extends TokenValidationError {
@@ -511,6 +522,14 @@ function diffTokenSets(figmaTokens: TokenSet, githubTokens: TokenSet): DiffEntry
         status = same ? 'unchanged' : 'modified';
       }
 
+      // Mirrors buildSyncPlan's own raw-value equality check exactly — that
+      // function decides "unchanged, nothing to apply" before ever looking
+      // at a resolution, so a 'modified' row whose raw $value is identical
+      // on both sides (a reference token whose target changed elsewhere)
+      // can't be affected by any resolution choice made here. Only compute
+      // this for 'modified' rows; it's meaningless for added/unchanged.
+      const cascadeOnly = status === 'modified' && JSON.stringify(fVal) === JSON.stringify(gVal);
+
       entries.push({
         category,
         key,
@@ -519,6 +538,7 @@ function diffTokenSets(figmaTokens: TokenSet, githubTokens: TokenSet): DiffEntry
         figmaDisplay: formatResolved(fVal, fResolved),
         githubDisplay: formatResolved(gVal, gResolved),
         status,
+        cascadeOnly,
       });
     }
   }
@@ -685,7 +705,7 @@ function computeStorybookStatus() {
 }
 
 function unresolvedConflictCount(): number {
-  return state.diff.filter((d) => d.status === 'modified' && !state.resolutions[`${d.category}:${d.key}`]).length;
+  return state.diff.filter((d) => d.status === 'modified' && !d.cascadeOnly && !state.resolutions[`${d.category}:${d.key}`]).length;
 }
 
 // ---------------------------------------------------------------------------
@@ -1095,7 +1115,7 @@ function renderSyncTab(): HTMLElement {
       container.appendChild(el('div', { className: 'status-banner success' }, ['Figma and GitHub are already in sync.']));
     } else {
       const addedCount = changed.filter((d) => d.status !== 'modified').length;
-      const conflictCount = changed.filter((d) => d.status === 'modified').length;
+      const conflictCount = changed.filter((d) => d.status === 'modified' && !d.cascadeOnly).length;
 
       if (addedCount > 0) {
         const selectRow = el('div', { className: 'btn-row' });
@@ -1126,12 +1146,12 @@ function renderSyncTab(): HTMLElement {
         const bulkRow = el('div', { className: 'btn-row' });
         const useAllFigma = el('button', { textContent: 'Use all Figma (conflicts)' });
         useAllFigma.onclick = () => {
-          for (const d of changed) if (d.status === 'modified') state.resolutions[`${d.category}:${d.key}`] = 'figma';
+          for (const d of changed) if (d.status === 'modified' && !d.cascadeOnly) state.resolutions[`${d.category}:${d.key}`] = 'figma';
           render();
         };
         const useAllGithub = el('button', { textContent: 'Use all GitHub (conflicts)' });
         useAllGithub.onclick = () => {
-          for (const d of changed) if (d.status === 'modified') state.resolutions[`${d.category}:${d.key}`] = 'github';
+          for (const d of changed) if (d.status === 'modified' && !d.cascadeOnly) state.resolutions[`${d.category}:${d.key}`] = 'github';
           render();
         };
         bulkRow.append(useAllFigma, useAllGithub);
@@ -1178,8 +1198,10 @@ function renderSyncTab(): HTMLElement {
 }
 
 function renderDiffRow(d: DiffEntry): HTMLElement {
-  const row = el('div', { className: `diff-row status-${d.status}` });
-  const badgeText = { 'added-figma': 'New in Figma', 'added-github': 'New in GitHub', modified: 'Conflict', unchanged: '' }[d.status];
+  const row = el('div', { className: `diff-row status-${d.status}${d.cascadeOnly ? ' cascade-only' : ''}` });
+  const badgeText = d.cascadeOnly
+    ? 'Auto-resolves'
+    : { 'added-figma': 'New in Figma', 'added-github': 'New in GitHub', modified: 'Conflict', unchanged: '' }[d.status];
   row.appendChild(el('div', { className: 'diff-key' }, [d.key, el('span', { className: 'diff-badge' }, [badgeText])]));
   row.appendChild(
     el('div', { className: 'diff-values' }, [
@@ -1188,7 +1210,18 @@ function renderDiffRow(d: DiffEntry): HTMLElement {
     ]),
   );
 
-  if (d.status === 'modified') {
+  if (d.status === 'modified' && d.cascadeOnly) {
+    // Nothing stored on this key changed — only what it resolves to,
+    // because something it points at changed elsewhere in this diff. No
+    // resolution to make: it settles on its own once the underlying
+    // reference is handled, same as any CSS variable's consumers picking
+    // up a new value automatically.
+    row.appendChild(
+      el('p', { className: 'cascade-note' }, [
+        "Nothing to decide here — this value only changed because a token it references changed. It resolves automatically once that token is handled.",
+      ]),
+    );
+  } else if (d.status === 'modified') {
     const resKey = `${d.category}:${d.key}`;
     const current = state.resolutions[resKey];
     const controls = el('div', { className: 'resolution-controls' });
@@ -1446,7 +1479,7 @@ function renderStatusTab(): HTMLElement {
           el('td', {}, [`${d.category}/${d.key}`]),
           el('td', {}, [d.figmaDisplay]),
           el('td', {}, [d.githubDisplay]),
-          el('td', {}, [DIFF_STATUS_LABEL[d.status]]),
+          el('td', {}, [d.cascadeOnly ? 'Auto-resolves (reference)' : DIFF_STATUS_LABEL[d.status]]),
         ]),
       );
     }
