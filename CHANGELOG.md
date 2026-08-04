@@ -9,6 +9,17 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.6.1] - 2026-08-04
+
+### Fixed
+- **History tab's empty state didn't distinguish "haven't clicked Load
+  history yet" from "loaded successfully, found zero entries."** Both
+  showed the same "Click 'Load history'…" prompt, which reads as broken
+  if you already clicked it. New `auditLogLoaded` flag lets the empty
+  state say "No sync history recorded yet on `<branch>`" once a load has
+  actually completed with zero results — a legitimate, expected state
+  for any branch that hasn't had a sync run since v1.6.0 shipped.
+
 ## [1.6.0] - 2026-08-04
 
 ### Added

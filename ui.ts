@@ -155,6 +155,10 @@ const state: {
   auditLog: AuditEntry[];
   auditLogLoading: boolean;
   auditLogError: string | null;
+  // Distinguishes "never clicked Load history yet" from "loaded, and there
+  // are genuinely zero entries" — both look like an empty auditLog array,
+  // but they need different empty-state copy.
+  auditLogLoaded: boolean;
   // Timestamp (AuditEntry.timestamp) of the entry currently being reverted,
   // or null — a string id rather than a boolean since only one revert can
   // run at a time but the UI needs to know WHICH row's button to disable.
@@ -189,6 +193,7 @@ const state: {
   auditLog: [],
   auditLogLoading: false,
   auditLogError: null,
+  auditLogLoaded: false,
   reverting: null,
 };
 
@@ -1742,6 +1747,7 @@ async function loadAuditLog() {
   try {
     const { text } = await fetchAuditLogRaw(state.settings, state.settings.branch);
     state.auditLog = parseAuditLog(text);
+    state.auditLogLoaded = true;
   } catch (err) {
     state.auditLogError = err instanceof Error ? err.message : String(err);
   } finally {
@@ -1870,11 +1876,15 @@ function renderHistoryTab(): HTMLElement {
   }
 
   if (state.auditLog.length === 0) {
-    container.appendChild(
-      el('div', { className: 'empty-state' }, [
-        state.auditLogLoading ? 'Loading history…' : 'Click "Load history" to see past syncs from this repo\'s configured branch.',
-      ]),
-    );
+    let message: string;
+    if (state.auditLogLoading) message = 'Loading history…';
+    else if (state.auditLogLoaded) {
+      // Loaded successfully, genuinely nothing there yet — most likely
+      // because no sync has run since this branch's audit log was created,
+      // or an older audit-log.jsonl predates this plugin version.
+      message = `No sync history recorded yet on "${state.settings.branch}" — it's created by the first sync run after this feature shipped (v1.6.0).`;
+    } else message = 'Click "Load history" to see past syncs from this repo\'s configured branch.';
+    container.appendChild(el('div', { className: 'empty-state' }, [message]));
     return container;
   }
 
