@@ -9,6 +9,31 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.2.0] - 2026-08-04
+
+### Changed
+- **Breaking: Sync no longer commits directly to the configured branch.**
+  It now creates a branch, commits the merged token set there, and opens
+  a pull request against the configured branch instead (a review gate —
+  see PROJECT.md §7/§10 bug #9). Figma is still updated immediately, since
+  it's a local design file, not the shared repo the gate protects; GitHub
+  only catches up once the PR is merged.
+- `SyncHistoryEntry` now records `{ prNumber, prUrl, branch }` instead of
+  `{ commitSha, commitUrl }`. Sync history stored in `figma.clientStorage`
+  from before this version won't render correctly in the Connect tab's
+  history list — it's local/cosmetic only, so no migration was written.
+- Personal access token guidance now also requires `Pull requests:
+  read/write` (in addition to `Contents: read/write` and `Actions:
+  read/write`), since Sync opens a PR rather than committing directly.
+- "Sync" button relabeled "Sync (open PR & update Figma)" with a tooltip
+  explaining the split (Figma updates immediately, GitHub via PR).
+
+### Added
+- **Status tab** — a banner showing the most recent sync's pull request
+  if it's still open ("pending review — the diff below won't resolve
+  until it's merged, that's expected") or was closed without merging.
+  `runCompare()` now also polls that PR's state as part of every refresh.
+
 ## [1.1.0] - 2026-08-04
 
 ### Added

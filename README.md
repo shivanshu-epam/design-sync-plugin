@@ -87,10 +87,16 @@ even against an out-of-date `design-tokens.json`.
 - **Sync** tab — fetches current Figma tokens and the GitHub JSON file,
   diffs them per key (added in Figma / added in GitHub / conflicting), and
   requires an explicit resolution (Use Figma / Use GitHub / Skip) for every
-  conflict before the "Sync" button unlocks. Syncing commits the merged
-  token set to GitHub and applies the GitHub-side changes back onto the
-  Figma styles in one action, so both ends converge.
+  conflict before the "Sync" button unlocks. Syncing opens a **pull
+  request** against the configured branch with the merged token set (a new
+  branch + commit + PR, never a direct commit to that branch — see
+  [PR-based review gate](#pr-based-review-gate)) and applies the
+  GitHub-side resolutions back onto the Figma styles immediately, so
+  Figma reflects the resolution right away even while the PR is pending.
 - **Status** tab — three-way Figma↔GitHub↔Storybook health check, plus:
+  - A banner for the most recent sync's pull request, if it's still open
+    ("pending review — the diff below won't resolve until it merges") or
+    was closed without merging.
   - **"Rebuild Storybook"** — always visible, disabled (with a tooltip and
     inline note) until a compare finds Storybook stale or never built.
     Triggers the tokens repo's `deploy-storybook.yml` via GitHub's
@@ -105,12 +111,30 @@ even against an out-of-date `design-tokens.json`.
     one-click copy button instead of opening a dead tab. **A plugin has no
     shell access in either execution context — this can detect the dev
     server, never start it.**
-- Last few sync commits are listed on the Connect tab as a lightweight
-  history/audit trail.
+- Last few sync pull requests are listed on the Connect tab as a
+  lightweight history/audit trail.
 
-Out of scope for this MVP: multi-file/multi-brand support, PR-based review
-flow (Sync still commits directly to the configured branch), rollback UI,
-and writing real Figma Variables back (GitHub-only tokens land as Styles).
+## PR-based review gate
+
+Sync never commits directly to the configured branch. Instead it:
+
+1. Creates a new branch (`design-sync/sync-<timestamp>`) off the current
+   tip of that branch.
+2. Commits the merged token set there.
+3. Opens a pull request: new branch → configured branch.
+
+The configured branch's SHA is untouched by any of this — a Sync that
+just happened will usually still show a Figma↔GitHub diff on the next
+"Refresh status," because the branch genuinely hasn't caught up until the
+PR merges. That's expected, not a bug; the Status tab's pending-PR banner
+exists to make that reading obvious. Merging the PR (or requiring review
+on it at all) is entirely up to how the branch is configured in
+GitHub — this plugin doesn't enforce, request, or auto-merge anything.
+
+Out of scope for this MVP: multi-file/multi-brand support, required-review
+enforcement or merge automation (the PR above is a plain, unreviewed PR
+the moment it's opened), and writing real Figma Variables back
+(GitHub-only tokens land as Styles).
 
 ## Setup
 
@@ -174,10 +198,12 @@ on every push/PR to `main`.
 │  │                           │                  │                        │ │
 │  │  • figma.* document API   │                  │  • fetch() — network   │ │
 │  │  • figma.clientStorage    │                  │  • all GitHub API      │ │
-│  │  • figma.openExternal()   │                  │    calls (Contents +   │ │
-│  │  • NO network access      │                  │    Actions dispatch)   │ │
-│  │  • reads/writes Styles    │                  │  • diff engine         │ │
-│  │    and Variables          │                  │  • conflict resolution │ │
+│  │  • figma.openExternal()   │                  │    calls (Contents,    │ │
+│  │  • NO network access      │                  │    Pull Requests,      │ │
+│  │  • reads/writes Styles    │                  │    Actions dispatch)   │ │
+│  │    and Variables          │                  │  • diff engine         │ │
+│  │                           │                  │  • conflict resolution │ │
+│  │                           │                  │  • branch + PR flow    │ │
 │  │                           │                  │  • local Storybook     │ │
 │  │                           │                  │    reachability check  │ │
 │  │                           │                  │  • renders all 4 tabs  │ │
@@ -191,8 +217,9 @@ on every push/PR to `main`.
 └─────────────────────────────────────────────────────────────────────────┘
                                        │
                                        │ GitHub REST API
-                                       │ (Contents: read/write tokens file,
-                                       │  Actions: workflow_dispatch)
+                                       │ (Contents: read/write; Pull Requests:
+                                       │  open sync PRs, poll status; Actions:
+                                       │  workflow_dispatch)
                                        ▼
                        ┌───────────────────────────────┐
                        │        design-tokens repo       │
@@ -217,8 +244,9 @@ that shape back into the document, and is the only place that can call
 
 **`ui.ts`** — runs in the plugin's UI panel, a real (sandboxed) browser
 iframe. Has `fetch()` but no document access. Everything involving GitHub
-(read, diff, conflict UI, commit, triggering the Storybook workflow),
-probing the local Storybook dev server, and rendering all four tabs.
+(read, diff, conflict UI, opening the sync PR, triggering the Storybook
+workflow), probing the local Storybook dev server, and rendering all four
+tabs.
 
 **`shared/tokens.ts`** — re-exports the token model from
 `design-sync-schema` and defines the plugin-local types (`GithubSettings`,
@@ -234,8 +262,12 @@ files (`scripts/build-main.mjs`, `scripts/build-ui.mjs`).
 Use a fine-grained personal access token scoped to just the design-tokens
 repo, with:
 
-- **Contents: Read and write** — reading/committing `design-tokens.json`
-  and `.storybook-sync.json`.
+- **Contents: Read and write** — reading `design-tokens.json`/
+  `.storybook-sync.json`, and creating the branch + commit a sync PR is
+  opened from.
+- **Pull requests: Read and write** — Sync opens a PR rather than
+  committing directly; the Status tab also polls the most recent PR's
+  state.
 - **Actions: Read and write** — only needed for the Status tab's "Rebuild
   Storybook" button (`workflow_dispatch`); everything else works without it.
 
@@ -245,9 +277,18 @@ allowed to reach, per `manifest.json`'s `networkAccess.allowedDomains`).
 
 ## Known limitations / concerns
 
-- **No PR-based review gate.** Sync commits directly to the configured
-  branch — no draft PR, no required review. Anyone with the plugin
-  configured can push straight to that branch.
+- **The PR-based review gate has no enforcement behind it.** Sync opens a
+  PR instead of committing directly (see
+  [PR-based review gate](#pr-based-review-gate)), but that PR is plain and
+  unreviewed the moment it's created — whether a review or approval is
+  actually *required* before merge is entirely down to how the target
+  branch is configured in GitHub (branch protection rules), outside this
+  plugin's control or knowledge.
+- **No conflict detection between two open sync PRs.** If two people sync
+  around the same time, each gets their own branch/PR; the second one to
+  merge hits GitHub's normal merge-conflict handling, same as any other
+  two branches touching the same file. Nothing here coordinates or warns
+  ahead of time.
 - **No Figma Variable write-back.** GitHub-only tokens pulled into Figma
   become Styles, never real Variables with collections/modes.
 - **PAT has no rotation or central management** — sits in per-user
@@ -268,5 +309,5 @@ allowed to reach, per `manifest.json`'s `networkAccess.allowedDomains`).
 - **No tests** for this plugin's own UI logic (`ui.ts`/`code.ts`) or for
   the `design-tokens` repo's code — only the extracted `design-sync-schema`
   package has unit test coverage so far.
-- **No audit trail or rollback** beyond the last-5-commits list on the
-  Connect tab and GitHub's own commit history.
+- **No audit trail or rollback** beyond the last-5-pull-requests list on
+  the Connect tab and GitHub's own PR/commit history.

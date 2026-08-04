@@ -146,6 +146,7 @@ const state: {
   storybookDeployError: string | null;
   localStorybookReachable: boolean | null;
   checkingLocalStorybook: boolean;
+  pendingPr: { number: number; url: string; state: 'open' | 'closed' } | null;
 } = {
   activeTab: 'connect',
   settings: null,
@@ -169,6 +170,7 @@ const state: {
   storybookDeployError: null,
   localStorybookReachable: null,
   checkingLocalStorybook: false,
+  pendingPr: null,
 };
 
 function appendLog(line: string) {
@@ -317,11 +319,12 @@ async function commitGithubTokens(
   settings: GithubSettings,
   tokens: TokenSet,
   sha: string | null,
+  branch: string,
 ): Promise<{ sha: string; url: string }> {
   const payload: Record<string, unknown> = {
     message: 'Design Sync: update design tokens',
     content: encodeBase64Utf8(JSON.stringify(tokens, null, 2) + '\n'),
-    branch: settings.branch,
+    branch,
   };
   if (sha) payload.sha = sha;
   const res = await githubRequest(
@@ -335,6 +338,66 @@ async function commitGithubTokens(
   }
   const body = await res.json();
   return { sha: body.content.sha as string, url: body.commit.html_url as string };
+}
+
+// ---------------------------------------------------------------------------
+// PR-based review gate (Phase 3) — Sync opens a PR against settings.branch
+// instead of committing to it directly, so nothing lands on the branch
+// consumed by Storybook/downstream builds without a review step.
+// ---------------------------------------------------------------------------
+
+async function getBranchHeadSha(settings: GithubSettings, branch: string): Promise<string> {
+  const res = await githubRequest(
+    `/repos/${settings.owner}/${settings.repo}/git/ref/heads/${encodeURIComponent(branch)}`,
+    settings,
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(`Reading ${branch}'s current commit failed: ${res.status} ${body.message ?? res.statusText}`);
+  }
+  const body = await res.json();
+  return body.object.sha as string;
+}
+
+async function createBranch(settings: GithubSettings, branch: string, fromSha: string): Promise<void> {
+  const res = await githubRequest(`/repos/${settings.owner}/${settings.repo}/git/refs`, settings, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: fromSha }),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(`Creating branch ${branch} failed: ${res.status} ${body.message ?? res.statusText}`);
+  }
+}
+
+async function createPullRequest(
+  settings: GithubSettings,
+  head: string,
+  title: string,
+  body: string,
+): Promise<{ number: number; url: string }> {
+  const res = await githubRequest(`/repos/${settings.owner}/${settings.repo}/pulls`, settings, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ title, head, base: settings.branch, body }),
+  });
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(`Opening pull request failed: ${res.status} ${errBody.message ?? res.statusText}`);
+  }
+  const prBody = await res.json();
+  return { number: prBody.number as number, url: prBody.html_url as string };
+}
+
+async function fetchPrStatus(settings: GithubSettings, number: number): Promise<{ state: 'open' | 'closed'; merged: boolean }> {
+  const res = await githubRequest(`/repos/${settings.owner}/${settings.repo}/pulls/${number}`, settings);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(`Reading pull request #${number} failed: ${res.status} ${body.message ?? res.statusText}`);
+  }
+  const body = await res.json();
+  return { state: body.state as 'open' | 'closed', merged: !!body.merged };
 }
 
 // ---------------------------------------------------------------------------
@@ -627,7 +690,7 @@ function renderConnectTab(): HTMLElement {
   container.appendChild(row('Personal access token (repo scope)', tokenInput));
   container.appendChild(
     el('p', { className: 'hint' }, [
-      'Stored locally on this machine only (figma.clientStorage), never leaves it except to talk to api.github.com. Use a fine-grained token scoped to this one repo, with Contents: read/write and Actions: read/write (Actions is only needed for the Status tab\'s "Rebuild Storybook" button).',
+      'Stored locally on this machine only (figma.clientStorage), never leaves it except to talk to api.github.com. Use a fine-grained token scoped to this one repo, with Contents: read/write (branches + commits), Pull requests: read/write (Sync opens a PR rather than committing directly), and Actions: read/write (only needed for the Status tab\'s "Rebuild Storybook" button).',
     ]),
   );
 
@@ -672,7 +735,7 @@ function renderConnectTab(): HTMLElement {
     historyHeading.style.marginTop = '18px';
     container.appendChild(historyHeading);
     for (const entry of state.history.slice(0, 5)) {
-      const link = el('a', { href: entry.commitUrl, target: '_blank', textContent: entry.commitSha.slice(0, 7) });
+      const link = el('a', { href: entry.prUrl, target: '_blank', textContent: `PR #${entry.prNumber}` });
       container.appendChild(
         el('div', { className: 'history-item' }, [`${new Date(entry.timestamp).toLocaleString()} — `, link]),
       );
@@ -949,7 +1012,10 @@ function renderSyncTab(): HTMLElement {
       const blocked = remaining > 0 || state.syncing;
       const syncBtn = el('button', {
         className: 'cta',
-        textContent: state.syncing ? 'Syncing…' : 'Sync (write to GitHub & Figma)',
+        textContent: state.syncing ? 'Opening pull request…' : 'Sync (open PR & update Figma)',
+        title: 'Applies your resolutions to Figma immediately, and opens a pull request against ' +
+          (state.settings?.branch ?? 'the configured branch') +
+          ' with the merged tokens — nothing is committed directly to that branch.',
       });
       if (blocked) syncBtn.setAttribute('disabled', 'true');
       syncBtn.onclick = () => runSync();
@@ -1142,6 +1208,19 @@ function renderStatusTab(): HTMLElement {
     ]),
   );
 
+  if (state.pendingPr) {
+    const link = el('a', { href: state.pendingPr.url, target: '_blank', textContent: `PR #${state.pendingPr.number}` });
+    container.appendChild(
+      el(
+        'div',
+        { className: `status-banner ${state.pendingPr.state === 'open' ? '' : 'error'}` },
+        state.pendingPr.state === 'open'
+          ? [link, ' is open and pending review. The differences below won\'t resolve until it\'s merged — that\'s expected, not an error.']
+          : [link, ' was closed without merging. Re-run Sync below if these changes are still needed.'],
+      ),
+    );
+  }
+
   container.appendChild(el('h2', {}, ['1. Figma ↔ GitHub']));
   if (figmaGithubInSync) {
     container.appendChild(el('div', { className: 'status-banner success' }, ['Every token matches between Figma and GitHub.']));
@@ -1266,19 +1345,32 @@ async function runCompare() {
   try {
     appendLog('Reading tokens from Figma styles…');
     appendLog(`Fetching ${settings.path} and .storybook-sync.json from GitHub…`);
-    const [figmaTokens, githubResult, marker] = await Promise.all([
+    // Only the most recent sync's PR is worth checking — if it's still
+    // open, that's why Figma↔GitHub may still show a diff below (the
+    // resolution already exists, just not merged into settings.branch yet).
+    const latestPr = state.history[0]?.prNumber != null ? state.history[0] : null;
+    const [figmaTokens, githubResult, marker, prStatus] = await Promise.all([
       requestFigmaTokens(),
       fetchGithubTokens(settings),
       fetchStorybookMarker(settings).catch((err) => {
         state.storybookError = err instanceof Error ? err.message : String(err);
         return null;
       }),
+      latestPr ? fetchPrStatus(settings, latestPr.prNumber).catch(() => null) : Promise.resolve(null),
     ]);
     state.figmaTokens = figmaTokens;
     state.githubTokens = githubResult.tokens;
     state.githubSha = githubResult.sha;
     state.storybookMarker = marker;
     computeStorybookStatus();
+
+    if (latestPr && prStatus && prStatus.state === 'open') {
+      state.pendingPr = { number: latestPr.prNumber, url: latestPr.prUrl, state: 'open' };
+    } else if (latestPr && prStatus && prStatus.state === 'closed' && !prStatus.merged) {
+      state.pendingPr = { number: latestPr.prNumber, url: latestPr.prUrl, state: 'closed' };
+    } else {
+      state.pendingPr = null;
+    }
 
     // Broken/circular references must block syncing outright — surfacing
     // them as a normal "conflict" wouldn't make sense, there's no value to
@@ -1335,8 +1427,15 @@ async function deployStorybook() {
   }
 }
 
+function syncBranchName(): string {
+  // Colons aren't valid in a git ref name.
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  return `design-sync/sync-${stamp}`;
+}
+
 async function runSync() {
   if (!state.settings) return;
+  const settings = state.settings;
   state.syncing = true;
   state.syncError = null;
   render();
@@ -1350,47 +1449,70 @@ async function runSync() {
     figmaApply.string = final.string;
     figmaApply.boolean = final.boolean;
 
-    appendLog('Committing merged tokens to GitHub…');
-    const commit = await commitGithubTokens(state.settings, final, state.githubSha);
-    appendLog(`Committed ${commit.sha.slice(0, 7)}.`);
+    // Sync opens a PR against settings.branch instead of committing to it
+    // directly — nothing lands on the branch Storybook/downstream builds
+    // consume without a review step (Phase 3). The base branch's SHA is
+    // untouched by any of this, so state.githubSha stays valid; a 409 on
+    // retry (the original reason for eagerly updating it after a direct
+    // commit) can't happen here, since we're never writing to the tip of
+    // settings.branch.
+    const branch = syncBranchName();
+    appendLog(`Creating branch ${branch}…`);
+    const baseSha = await getBranchHeadSha(settings, settings.branch);
+    await createBranch(settings, branch, baseSha);
 
-    // GitHub has already changed at this point, independent of whether the
-    // Figma-apply step below succeeds — state must track that immediately,
-    // or a retry after a failed apply would resend this now-stale sha and
-    // GitHub would 409 ("does not match") on every subsequent attempt.
-    state.githubTokens = final;
-    state.githubSha = commit.sha;
+    appendLog('Committing merged tokens to the new branch…');
+    await commitGithubTokens(settings, final, state.githubSha, branch);
+
+    const changedCount = state.diff.filter((d) => d.status !== 'unchanged' && !(state.resolutions[`${d.category}:${d.key}`] === 'skip')).length;
+    appendLog('Opening pull request…');
+    const pr = await createPullRequest(
+      settings,
+      branch,
+      'Design Sync: update design tokens',
+      `Opened by the Design Sync Figma plugin. ${changedCount} token(s) resolved.\n\nMerging this brings \`${settings.path}\` in line with the current Figma file.`,
+    );
+    appendLog(`Opened PR #${pr.number}.`);
+
     state.resolutions = {};
-    computeStorybookStatus();
 
     const historyEntry: SyncHistoryEntry = {
       timestamp: new Date().toISOString(),
-      commitSha: commit.sha,
-      commitUrl: commit.url,
+      prNumber: pr.number,
+      prUrl: pr.url,
+      branch,
     };
     state.history.unshift(historyEntry);
     postToPlugin({ type: 'save-history', entry: historyEntry });
+    state.pendingPr = { number: pr.number, url: pr.url, state: 'open' };
 
+    // Figma is a local design file, not the shared repo the review gate
+    // protects — applying the merged resolution here immediately (ahead
+    // of the PR being reviewed/merged) is intentional, not a bypass. The
+    // next "Refresh status" will correctly show these tokens as still
+    // differing from settings.branch until the PR actually merges.
     appendLog('Applying changes to Figma styles…');
     const resolvedApply = resolveForFigmaApply(figmaApply, final);
     const result = await applyTokensToFigma(resolvedApply);
     if (!result.success) {
       throw new Error(
-        `GitHub was updated (commit ${commit.sha.slice(0, 7)}), but applying changes back to Figma failed: ${
+        `Pull request #${pr.number} was opened, but applying changes back to Figma failed: ${
           result.error ?? 'unknown error'
         }. This usually means you only have view access to this Figma file.`,
       );
     }
     appendLog('Figma styles updated.');
-    appendLog('Sync complete.');
+    appendLog('Sync complete — pull request pending review.');
   } catch (err) {
     state.syncError = err instanceof Error ? err.message : String(err);
     appendLog(`Error: ${state.syncError}`);
   } finally {
-    // Always reconcile against whatever actually happened, even on a
-    // partial failure above — but don't let a failure *here* mask whatever
-    // error the try block already recorded, or go unhandled entirely
-    // (runSync() itself is fired from an onclick with no .catch()).
+    // Always reconcile Figma-side state against whatever actually
+    // happened, even on a partial failure above — but don't let a failure
+    // *here* mask whatever error the try block already recorded, or go
+    // unhandled entirely (runSync() itself is fired from an onclick with
+    // no .catch()). GitHub-side state (githubTokens/githubSha) is left
+    // alone — settings.branch didn't change, the PR did.
     try {
       state.figmaTokens = await requestFigmaTokens();
       state.diff = diffTokenSets(state.figmaTokens, state.githubTokens);

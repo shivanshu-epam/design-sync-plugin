@@ -40,10 +40,10 @@ no database, no CI required (though it can be added later).
 
 A Figma plugin reads colors/typography/shadows/spacing directly from the
 Figma file (Styles **and** Variables), diffs them against a JSON file in a
-GitHub repo, lets you resolve any conflicts, and commits the merged result
-— while a companion Storybook in that same repo documents whatever's
-currently committed, with a lightweight marker file that tells you if
-Storybook is behind.
+GitHub repo, lets you resolve any conflicts, and opens a pull request with
+the merged result for review — while a companion Storybook in that same
+repo documents whatever's currently merged, with a lightweight marker file
+that tells you if Storybook is behind.
 
 ```
 ┌─────────────┐        ┌──────────────────────┐        ┌─────────────┐
@@ -225,15 +225,31 @@ path described above.
    per-row "skip" checkbox. `modified` conflicts have **no default** — Use
    Figma / Use GitHub / Skip must be picked explicitly per row (or in bulk)
    before the Sync button unlocks, so nothing gets silently overwritten.
-5. **Sync**, in order:
-   a. Commit the merged set to GitHub (single PUT to the Contents API).
-   b. Update local state to the new GitHub SHA **immediately** — this
-      matters (see §10, bug #3).
-   c. Apply GitHub-only changes back onto Figma — creates/updates
+5. **Sync**, in order (Phase 3 — PR-based review gate; see §10, bug #9 for
+   the earlier direct-commit version and why it changed):
+   a. Create a new branch (`design-sync/sync-<timestamp>`) off the current
+      tip of `settings.branch`.
+   b. Commit the merged token set to that new branch (PUT to the Contents
+      API, targeting the new branch, not `settings.branch`).
+   c. Open a pull request: new branch → `settings.branch`. Nothing lands
+      on the branch Storybook/downstream builds consume without someone
+      merging that PR.
+   d. Apply GitHub-side resolutions back onto Figma — creates/updates
       Paint/Text/Effect **styles** (not Variables — see limitations).
       Custom dimension tokens are written back to `figma.root`'s shared
       plugin data; variable-derived dimension tokens never are (see §10,
-      bug #5).
+      bug #5). This happens immediately, **not** gated on the PR merging —
+      Figma is a local design file, not the shared repo the review gate
+      protects, so there's nothing to review-gate here.
+
+   Because `settings.branch` itself is never written to directly, its SHA
+   never changes as a side effect of Sync — the original reason for
+   eagerly updating local state right after a commit (§10, bug #3) no
+   longer applies. A **side effect worth understanding**: the next
+   "Refresh status" after a Sync will usually still show a Figma↔GitHub
+   diff, because `settings.branch` genuinely hasn't caught up yet — that's
+   expected, not a bug, and the Status tab surfaces the open PR so it
+   reads as "pending review," not "broken."
 
 ---
 
@@ -278,10 +294,10 @@ The Status tab shows this as two explicit sections plus an overall banner:
 
 | Tab | Purpose |
 |---|---|
-| **Connect** | GitHub owner/repo/branch/token-file-path + a personal access token. Saved via `figma.clientStorage` (this machine only). Also shows recent sync history (last 5 commits). |
+| **Connect** | GitHub owner/repo/branch/token-file-path + a personal access token. Saved via `figma.clientStorage` (this machine only). Also shows recent sync history (last 5 pull requests). |
 | **Custom Tokens** | Key/value editor for dimension tokens that aren't backed by a Figma Variable (e.g. one-off spacing values). Stored in the Figma file's shared plugin data. |
-| **Sync** | The diff/conflict-resolution/commit flow described in §7. Auto-runs on plugin launch and right after saving Connect settings, so you land on the diff without an extra click. |
-| **Status** | Three-way health check described in §8, the in-app Storybook setup/update guide, a **"Rebuild Storybook"** button (`workflow_dispatch`-triggers the deploy workflow once something's stale), and a **"View Storybook (local)"** button (checks `localhost:6006` is reachable, opens it if so, otherwise shows the exact `npm run storybook` command with a copy button — a plugin can't start that server itself). |
+| **Sync** | The diff/conflict-resolution/PR flow described in §7. Auto-runs on plugin launch and right after saving Connect settings, so you land on the diff without an extra click. |
+| **Status** | Three-way health check described in §8, a banner for the most recent sync's pull request if it's still open or was closed unmerged, the in-app Storybook setup/update guide, a **"Rebuild Storybook"** button (`workflow_dispatch`-triggers the deploy workflow once something's stale), and a **"View Storybook (local)"** button (checks `localhost:6006` is reachable, opens it if so, otherwise shows the exact `npm run storybook` command with a copy button — a plugin can't start that server itself). |
 
 ---
 
@@ -349,6 +365,20 @@ gets rebuilt or extended later.
    effect while the plugin is loaded via manifest for development — see
    the corresponding note in §11.
 
+9. **Direct-commit Sync was a real risk, not a hypothetical one.** Anyone
+   with the plugin configured could push straight to `settings.branch` —
+   no review, no second pair of eyes, before landing on the branch
+   Storybook/downstream consumers actually build from. Fixed by switching
+   Sync to the branch+PR flow in §7: `settings.branch` itself is never
+   written to directly. One consequence worth calling out because it's
+   easy to mistake for a bug — since the base branch doesn't move,
+   `state.githubSha`/`state.githubTokens` are correctly left untouched
+   after a sync, and the next "Refresh status" will keep showing the
+   just-resolved tokens as differing until the PR is actually merged.
+   That's the review gate working as intended, not a regression; the
+   Status tab's pending-PR banner exists specifically to make that
+   reading obvious instead of alarming.
+
 ---
 
 ## 11. What's explicitly out of scope (for now)
@@ -357,8 +387,17 @@ gets rebuilt or extended later.
   Figma creates/updates a *style*, not a Variable with collections/modes.
   Reading Variables works both ways is a real gap; writing them is a
   separate, larger piece of work.
-- **PR-based review flow.** Syncing commits directly to the configured
-  branch — no draft PR, no review step.
+- **No required-review enforcement, no merge automation.** Sync opens a PR
+  (§7) instead of committing directly, but that PR is a plain, unreviewed
+  pull request the moment it's opened — nothing here enforces branch
+  protection, requires an approval, or auto-merges anything. Whether
+  reviews are actually required is entirely down to how `settings.branch`
+  is configured in GitHub, outside this plugin's control.
+- **No conflict detection between two open sync PRs.** If two people sync
+  around the same time, each gets their own branch/PR — GitHub's normal
+  merge-conflict handling applies to the second one, same as it would for
+  any two branches editing the same file; nothing plugin-side coordinates
+  or warns about this ahead of time.
 - **The "View Storybook (local)" reachability check only works while the
   plugin is loaded via manifest for local development** —
   `devAllowedDomains` in `manifest.json` (needed to permit the
@@ -369,8 +408,8 @@ gets rebuilt or extended later.
   build/typecheck/validate** — no tests for `ui.ts`/`code.ts`, or for the
   tokens repo's own scripts. Only the extracted `design-sync-schema`
   package has unit test coverage.
-- **No audit trail or rollback** beyond the last-5-commits list on the
-  Connect tab and GitHub's own commit history.
+- **No audit trail or rollback** beyond the last-5-pull-requests list on
+  the Connect tab and GitHub's own PR/commit history.
 - **PAT has no rotation or central management** — sits in per-user
   `figma.clientStorage` indefinitely.
 - **Multi-file / multi-brand support, audit database, Slack

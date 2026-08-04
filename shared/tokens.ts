@@ -24,10 +24,14 @@ export interface GithubSettings {
   token: string;
 }
 
+// Sync now opens a pull request against the configured branch instead of
+// committing to it directly (a review gate — see PROJECT.md §7), so a
+// history entry records the PR, not a raw commit.
 export interface SyncHistoryEntry {
   timestamp: string; // ISO
-  commitSha: string;
-  commitUrl: string;
+  prNumber: number;
+  prUrl: string;
+  branch: string; // the head branch the PR was opened from
 }
 
 // Written by `npm run build-storybook`'s postbuild hook in the tokens repo
