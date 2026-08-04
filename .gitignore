@@ -9,5 +9,8 @@ code.js
 ui.html
 
 # Local Claude Code tool state (permissions, dev-server launch config with
-# machine-specific absolute paths) — not portable project source.
-.claude/
+# machine-specific absolute paths) — not portable project source. Skills
+# ARE portable project source (no machine-specific state), so they're
+# carved out and tracked.
+.claude/*
+!.claude/skills/
