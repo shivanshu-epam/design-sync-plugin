@@ -50,7 +50,8 @@ export type UIToPluginMessage =
   | { type: 'request-figma-tokens' }
   | { type: 'save-custom-tokens'; dimension: Record<string, DimensionToken>; string: Record<string, StringToken>; boolean: Record<string, BooleanToken> }
   | { type: 'apply-tokens'; tokens: TokenSet }
-  | { type: 'save-history'; entry: SyncHistoryEntry };
+  | { type: 'save-history'; entry: SyncHistoryEntry }
+  | { type: 'open-external'; url: string };
 
 export type PluginToUIMessage =
   | { type: 'init'; settings: GithubSettings | null; history: SyncHistoryEntry[] }

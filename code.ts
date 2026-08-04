@@ -544,5 +544,9 @@ figma.ui.onmessage = async (msg: UIToPluginMessage) => {
       await figma.clientStorage.setAsync(HISTORY_KEY, history.slice(0, 20));
       break;
     }
+
+    case 'open-external':
+      if (msg.url.startsWith('https://') || msg.url.startsWith('http://localhost:')) figma.openExternal(msg.url);
+      break;
   }
 };

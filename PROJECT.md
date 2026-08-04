@@ -135,6 +135,8 @@ which Figma can't load.
 | `shadow` | Effect styles (drop/inner shadow layers) | `figma.getLocalEffectStylesAsync()` |
 | `dimension` | Manually-entered custom tokens | `figma.root.getSharedPluginData(...)` |
 | `dimension` | FLOAT variables, every collection/mode | `figma.variables.getLocalVariablesAsync()` |
+| `string` | STRING variables, every collection/mode | `figma.variables.getLocalVariablesAsync()` |
+| `boolean` | BOOLEAN variables, every collection/mode | `figma.variables.getLocalVariablesAsync()` |
 
 **Why both Styles and Variables:** Figma's Variables plugin API needs an
 Enterprise-tier *file* (not viewer) to have variables at all — but reading
@@ -147,34 +149,64 @@ UUI), where colors/spacing are organized into Variable collections
 **Variable keys** are built as `CollectionName/[ModeName/]VariableName` —
 mode name only included when a collection has more than one mode. A
 variable whose value is a `VARIABLE_ALIAS` (points at another variable,
-possibly in a different collection) is resolved recursively to its
-concrete value before being stored.
+possibly in a different collection) is stored as a **live reference**
+(`{ kind: 'reference', refKey: '<category>/<key>' }`), not flattened to a
+concrete value at read time — see §6. If the alias target isn't in Figma's
+currently-active variable list (an orphaned reference — the target was
+deleted but something still points at it), it falls back to a resolved
+concrete snapshot instead of failing the read.
 
-**Only COLOR and FLOAT variable types are read.** STRING and BOOLEAN are
-skipped — out of scope for this MVP, since neither maps cleanly onto the
-token categories in use.
+**All four variable types are read**: COLOR, FLOAT, STRING, and BOOLEAN.
 
 ---
 
 ## 6. The token model
 
+The schema, resolution, and validation logic used to live here **and**
+hand-duplicated in the tokens repo — a real drift risk, patched twice in
+two places before being extracted. It now lives in one place: a small
+shared package, [`design-sync-schema`](https://github.com/shivanshu-epam/Atlassian-design-system),
+that both repos depend on as a real `github:` package dependency
+(auto-built via `prepare` on install), with 19 unit tests covering exactly
+the bug classes below.
+
 ```ts
+type TokenValue<T> =
+  | { kind: 'value'; value: T }
+  | { kind: 'reference'; refKey: string };  // '<category>/<key>'
+
+interface DesignToken<T> {
+  $type: TokenCategory;   // 'color' | 'typography' | 'shadow' | 'dimension' | 'string' | 'boolean'
+  $value: TokenValue<T>;
+  $description?: string;
+  $extensions?: { 'design-sync.figmaSourceType'?: 'style' | 'variable' };
+}
+
 interface TokenSet {
-  color:      Record<string, { $type: 'color';      $value: string }>;              // hex
-  typography: Record<string, { $type: 'typography'; $value: {                       // structured
-    fontFamily: string; fontStyle: string; fontSize: number;
-    lineHeight: { value: number; unit: 'PIXELS'|'PERCENT'|'AUTO' };
-    letterSpacing: { value: number; unit: 'PIXELS'|'PERCENT' };
-  }}>;
-  shadow:     Record<string, { $type: 'shadow';      $value: ShadowLayer[] }>;       // array (multi-layer)
-  dimension:  Record<string, { $type: 'dimension';   $value: string }>;              // "8px"
+  color:      Record<string, DesignToken<string>>;         // hex
+  typography: Record<string, DesignToken<TypographyValue>>;
+  shadow:     Record<string, DesignToken<ShadowLayer[]>>;  // multi-layer
+  dimension:  Record<string, DesignToken<string>>;         // "8px"
+  string:     Record<string, DesignToken<string>>;
+  boolean:    Record<string, DesignToken<boolean>>;
 }
 ```
 
-This is the exact shape written to `design-tokens.json`. Keys are
-slash-delimited paths mirroring whatever naming convention exists in
-Figma — a style name directly, or the `Collection/Mode/Variable` path
-described above.
+This is a **breaking change from the original flat-value shape**
+(`$value: <concrete value>`, aliases eagerly resolved at read time and
+never preserved) — the DTCG-aligned `kind: 'value' | 'reference'` wrapper
+is what lets a semantic token stay linked to the primitive it points at
+instead of losing that relationship the moment it's read out of Figma.
+`resolveToken()` walks a reference chain to its concrete value on demand;
+`validateTokenSet()` detects broken and circular references (direct and
+indirect) so they can be surfaced as individual, skippable conflicts
+rather than blocking an entire sync. Tokens still found in the old flat
+shape are auto-normalized on read, in memory — no manual migration script
+needs to be run against an out-of-date `design-tokens.json`.
+
+Keys are slash-delimited paths mirroring whatever naming convention
+exists in Figma — a style name directly, or the `Collection/Mode/Variable`
+path described above.
 
 ---
 
@@ -220,11 +252,17 @@ so unlike Figma↔GitHub, there's no per-token comparison possible. Instead:
   Storybook reflects what's on GitHub right now; if not, it's stale (or
   `.storybook-sync.json` doesn't exist yet — never built).
 
-This means the "sync" between GitHub and Storybook is **manual**: after any
-plugin sync that changes tokens, someone needs to run
-`npm run build-storybook && git push` in the tokens repo. The Status tab
-tells you when that's needed; it doesn't do it automatically (no CI is
-wired up — see §11).
+Bringing Storybook back in sync is **scripted but deliberately not
+automatic**: `design-tokens/.github/workflows/deploy-storybook.yml`
+rebuilds Storybook, deploys it to GitHub Pages, and commits the refreshed
+`.storybook-sync.json` back to the repo — but it only has a
+`workflow_dispatch` trigger, no `on: push`. The Status tab's **"Rebuild
+Storybook"** button calls that `workflow_dispatch` API directly once it
+detects Storybook is behind; running it manually (`gh workflow run
+deploy-storybook.yml`, or the button in the repo's Actions tab) works too.
+Rebuilding on *every* push was considered and rejected — it turns a
+reviewable action into a side effect of every commit, including ones that
+don't touch tokens at all.
 
 The Status tab shows this as two explicit sections plus an overall banner:
 
@@ -243,7 +281,7 @@ The Status tab shows this as two explicit sections plus an overall banner:
 | **Connect** | GitHub owner/repo/branch/token-file-path + a personal access token. Saved via `figma.clientStorage` (this machine only). Also shows recent sync history (last 5 commits). |
 | **Custom Tokens** | Key/value editor for dimension tokens that aren't backed by a Figma Variable (e.g. one-off spacing values). Stored in the Figma file's shared plugin data. |
 | **Sync** | The diff/conflict-resolution/commit flow described in §7. Auto-runs on plugin launch and right after saving Connect settings, so you land on the diff without an extra click. |
-| **Status** | Read-only three-way health check described in §8, plus the in-app Storybook setup/update guide. |
+| **Status** | Three-way health check described in §8, the in-app Storybook setup/update guide, a **"Rebuild Storybook"** button (`workflow_dispatch`-triggers the deploy workflow once something's stale), and a **"View Storybook (local)"** button (checks `localhost:6006` is reachable, opens it if so, otherwise shows the exact `npm run storybook` command with a copy button — a plugin can't start that server itself). |
 
 ---
 
@@ -302,6 +340,15 @@ gets rebuilt or extended later.
    Also stopped TypeScript from inferring a literal type over the
    1.6MB JSON import — pure overhead, since it's cast away immediately.
 
+8. **Plugin failed to load entirely ("unable to run") after adding a
+   `localhost` domain to `networkAccess.allowedDomains`.** That key only
+   accepts `https://` domains in production; a plain-HTTP entry fails
+   manifest validation outright rather than just being ignored. Fix:
+   `http://localhost:6006` moved to the separate `devAllowedDomains` key,
+   which is specifically for non-HTTPS/local-only domains and only takes
+   effect while the plugin is loaded via manifest for development — see
+   the corresponding note in §11.
+
 ---
 
 ## 11. What's explicitly out of scope (for now)
@@ -310,13 +357,23 @@ gets rebuilt or extended later.
   Figma creates/updates a *style*, not a Variable with collections/modes.
   Reading Variables works both ways is a real gap; writing them is a
   separate, larger piece of work.
-- **STRING and BOOLEAN variables.** Only COLOR and FLOAT are synced.
-- **Automatic Storybook rebuilds.** No GitHub Actions workflow is wired
-  up — `npm run build-storybook && git push` is manual. The Status tab
-  tells you when it's needed.
 - **PR-based review flow.** Syncing commits directly to the configured
   branch — no draft PR, no review step.
-- **Multi-file / multi-brand support, rollback UI, audit database, Slack
+- **The "View Storybook (local)" reachability check only works while the
+  plugin is loaded via manifest for local development** —
+  `devAllowedDomains` in `manifest.json` (needed to permit the
+  `localhost:6006` fetch) is a dev-only manifest key by Figma's design. If
+  this plugin is ever published, that check silently stops working for
+  installed users.
+- **No CI on this plugin repo or the tokens repo checks logic beyond
+  build/typecheck/validate** — no tests for `ui.ts`/`code.ts`, or for the
+  tokens repo's own scripts. Only the extracted `design-sync-schema`
+  package has unit test coverage.
+- **No audit trail or rollback** beyond the last-5-commits list on the
+  Connect tab and GitHub's own commit history.
+- **PAT has no rotation or central management** — sits in per-user
+  `figma.clientStorage` indefinitely.
+- **Multi-file / multi-brand support, audit database, Slack
   notifications** — all part of the original "Design Sync" platform
   vision, none of it built here. This project is the Figma↔GitHub↔
   Storybook loop only.
@@ -401,9 +458,11 @@ whenever it detects Storybook has never been built.
    Variables if the file has them).
 2. Open the plugin → **Sync** tab (or **Status**, to just check without
    committing) → review the diff → resolve any conflicts → **Sync**.
-3. If tokens changed: `cd <tokens-repo> && npm run build-storybook && git
-   push` to bring Storybook back in sync (or check the **Status** tab
-   first to confirm it's actually needed).
+3. If tokens changed: click **"Rebuild Storybook"** on the **Status** tab
+   (only enabled once it detects Storybook is actually behind) to trigger
+   the deploy workflow directly from the plugin — or run
+   `cd <tokens-repo> && npm run build-storybook && git push` manually if
+   you'd rather not grant the PAT `Actions: write`.
 4. Anyone can also edit `design-tokens.json` directly on GitHub — the
    plugin picks that up as a "New in GitHub" entry (or conflict, if Figma
    also changed the same key) on the next compare.

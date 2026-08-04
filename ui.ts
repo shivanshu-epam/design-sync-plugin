@@ -141,6 +141,11 @@ const state: {
   storybookMarker: StorybookSyncMarker | null;
   storybookStatus: StorybookStatus;
   storybookError: string | null;
+  storybookDeploying: boolean;
+  storybookDeployMessage: string | null;
+  storybookDeployError: string | null;
+  localStorybookReachable: boolean | null;
+  checkingLocalStorybook: boolean;
 } = {
   activeTab: 'connect',
   settings: null,
@@ -159,6 +164,11 @@ const state: {
   storybookMarker: null,
   storybookStatus: 'unknown',
   storybookError: null,
+  storybookDeploying: false,
+  storybookDeployMessage: null,
+  storybookDeployError: null,
+  localStorybookReachable: null,
+  checkingLocalStorybook: false,
 };
 
 function appendLog(line: string) {
@@ -210,6 +220,25 @@ function encodeBase64Utf8(str: string): string {
   let binary = '';
   bytes.forEach((b) => (binary += String.fromCharCode(b)));
   return btoa(binary);
+}
+
+// Triggers .github/workflows/deploy-storybook.yml in the tokens repo via
+// workflow_dispatch. That workflow has no `on: push` trigger by design —
+// rebuilding Storybook is a deliberate action the user takes after
+// reviewing the diff here, not a side effect of every commit. The API
+// returns 204 with no run id, so there's nothing to poll; the user checks
+// progress in the repo's Actions tab and re-runs "Refresh status" once
+// GitHub Pages has redeployed.
+async function triggerStorybookDeploy(settings: GithubSettings): Promise<void> {
+  const res = await githubRequest(
+    `/repos/${settings.owner}/${settings.repo}/actions/workflows/deploy-storybook.yml/dispatches`,
+    settings,
+    { method: 'POST', body: JSON.stringify({ ref: settings.branch }) },
+  );
+  if (res.status !== 204) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(`Triggering Storybook deploy failed: ${res.status} ${body.message ?? res.statusText}`);
+  }
 }
 
 async function testConnection(settings: GithubSettings): Promise<{ ok: boolean; message: string }> {
@@ -458,6 +487,52 @@ function resolveForFigmaApply(figmaApply: TokenSet, context: TokenSet): TokenSet
   return resolved;
 }
 
+// Storybook's default dev-server port (`storybook dev -p 6006` in the
+// tokens repo's package.json). A plugin can't spawn that server itself —
+// neither execution context has shell access — so the best it can do is
+// check whether something is already listening there before opening a
+// tab, rather than blindly opening a tab that 404s.
+const LOCAL_STORYBOOK_URL = 'http://localhost:6006';
+
+// `no-cors` mode is required here: Storybook's dev server sends no
+// Access-Control-Allow-Origin header, so a normal `cors`-mode fetch would
+// reject with the exact same "Failed to fetch" TypeError whether the port
+// is closed or the server is just running without CORS headers — making
+// the two cases indistinguishable. `no-cors` resolves to an opaque
+// response as long as *something* answers the TCP connection, which is
+// all we need to know.
+async function checkLocalStorybook(): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 1500);
+    await fetch(LOCAL_STORYBOOK_URL, { mode: 'no-cors', cache: 'no-store', signal: controller.signal });
+    clearTimeout(timeout);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function copyToClipboard(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    // Figma's plugin UI iframe doesn't always grant the async Clipboard
+    // API permission; a synchronous execCommand from the same click
+    // handler works even when the promise-based API is denied.
+    const textarea = document.createElement('textarea');
+    textarea.value = text;
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const ok = document.execCommand('copy');
+    document.body.removeChild(textarea);
+    return ok;
+  }
+}
+
 function computeStorybookStatus() {
   if (state.storybookError) {
     state.storybookStatus = 'error';
@@ -552,7 +627,7 @@ function renderConnectTab(): HTMLElement {
   container.appendChild(row('Personal access token (repo scope)', tokenInput));
   container.appendChild(
     el('p', { className: 'hint' }, [
-      'Stored locally on this machine only (figma.clientStorage), never leaves it except to talk to api.github.com. Use a fine-grained token scoped to this one repo.',
+      'Stored locally on this machine only (figma.clientStorage), never leaves it except to talk to api.github.com. Use a fine-grained token scoped to this one repo, with Contents: read/write and Actions: read/write (Actions is only needed for the Status tab\'s "Rebuild Storybook" button).',
     ]),
   );
 
@@ -1009,7 +1084,13 @@ function renderStorybookGuide(): HTMLElement {
       ]),
     );
   } else {
-    body.appendChild(el('p', { className: 'hint' }, ['Storybook is already set up here. To bring it up to date after a sync:']));
+    body.appendChild(
+      el('p', { className: 'hint' }, [
+        'Storybook is already set up here. Use the "Rebuild Storybook" button above to trigger ',
+        el('code', {}, ['deploy-storybook.yml']),
+        ' from here, or run it manually:',
+      ]),
+    );
     body.appendChild(
       el('pre', {}, [`cd ${repoName}\nnpm run build-storybook\ngit add -A\ngit commit -m "Update Storybook"\ngit push`]),
     );
@@ -1097,6 +1178,70 @@ function renderStatusTab(): HTMLElement {
     const text = typeof info.text === 'function' ? info.text() : info.text;
     container.appendChild(el('div', { className: `status-banner ${info.cls}` }, [text]));
   }
+
+  const viewBtn = el('button', {
+    textContent: state.checkingLocalStorybook ? 'Checking…' : 'View Storybook (local)',
+    title: `Checks for a dev server at ${LOCAL_STORYBOOK_URL} and opens it if found. A plugin can't start the server itself — no shell access in either execution context.`,
+  });
+  if (state.checkingLocalStorybook) viewBtn.setAttribute('disabled', 'true');
+  viewBtn.onclick = () => viewLocalStorybook();
+  container.appendChild(el('div', { className: 'btn-row' }, [viewBtn]));
+
+  if (state.localStorybookReachable === true) {
+    container.appendChild(
+      el('div', { className: 'status-banner success' }, [`Found it running at ${LOCAL_STORYBOOK_URL} — opened in your browser.`]),
+    );
+  } else if (state.localStorybookReachable === false) {
+    const repoName = state.settings?.repo ?? 'design-tokens';
+    const command = `cd ${repoName}\nnpm run storybook`;
+    const guide = el('div', { className: 'status-banner error' }, [
+      `Nothing's listening at ${LOCAL_STORYBOOK_URL}. Run this in a terminal, then click the button again:`,
+    ]);
+    container.appendChild(guide);
+    const commandRow = el('div', { className: 'btn-row' });
+    commandRow.appendChild(el('pre', {}, [command]));
+    const copyBtn = el('button', { textContent: 'Copy' });
+    copyBtn.onclick = async () => {
+      const ok = await copyToClipboard(command);
+      copyBtn.textContent = ok ? 'Copied!' : 'Copy failed';
+      setTimeout(() => {
+        copyBtn.textContent = 'Copy';
+      }, 1500);
+    };
+    commandRow.appendChild(copyBtn);
+    container.appendChild(commandRow);
+  }
+
+  const canDeploy = state.storybookStatus === 'stale' || state.storybookStatus === 'never-built';
+  const deployDisabledReason: string | null = state.storybookDeploying
+    ? null
+    : canDeploy
+      ? null
+      : state.storybookStatus === 'in-sync'
+        ? 'Storybook already reflects the latest tokens on GitHub — nothing to rebuild.'
+        : state.storybookStatus === 'error'
+          ? "Couldn't determine Storybook status — see the error above before retrying."
+          : 'Run "Refresh status" first so this can tell whether Storybook needs rebuilding.';
+
+  const deployBtn = el('button', {
+    className: 'primary',
+    textContent: state.storybookDeploying ? 'Triggering…' : 'Rebuild Storybook',
+    title: state.storybookDeploying ? 'Deploy already in progress' : (deployDisabledReason ?? 'Rebuild and redeploy Storybook from the latest tokens on GitHub'),
+  });
+  if (state.storybookDeploying || deployDisabledReason) deployBtn.setAttribute('disabled', 'true');
+  deployBtn.onclick = () => deployStorybook();
+  container.appendChild(el('div', { className: 'btn-row' }, [deployBtn]));
+  if (deployDisabledReason && !state.storybookDeploying) {
+    container.appendChild(el('p', { className: 'hint' }, [deployDisabledReason]));
+  }
+
+  if (state.storybookDeployMessage) {
+    container.appendChild(el('div', { className: 'status-banner success' }, [state.storybookDeployMessage]));
+  }
+  if (state.storybookDeployError) {
+    container.appendChild(el('div', { className: 'status-banner error' }, [state.storybookDeployError]));
+  }
+
   container.appendChild(renderStorybookGuide());
 
   return container;
@@ -1112,6 +1257,8 @@ async function runCompare() {
   state.comparing = true;
   state.syncError = null;
   state.storybookError = null;
+  state.storybookDeployMessage = null;
+  state.storybookDeployError = null;
   state.diff = [];
   state.validationErrors = [];
   state.resolutions = {};
@@ -1152,6 +1299,38 @@ async function runCompare() {
     appendLog(`Error: ${state.syncError}`);
   } finally {
     state.comparing = false;
+    render();
+  }
+}
+
+async function viewLocalStorybook() {
+  state.checkingLocalStorybook = true;
+  state.localStorybookReachable = null;
+  render();
+  const reachable = await checkLocalStorybook();
+  state.checkingLocalStorybook = false;
+  state.localStorybookReachable = reachable;
+  if (reachable) postToPlugin({ type: 'open-external', url: LOCAL_STORYBOOK_URL });
+  render();
+}
+
+async function deployStorybook() {
+  if (!state.settings) return;
+  state.storybookDeploying = true;
+  state.storybookDeployMessage = null;
+  state.storybookDeployError = null;
+  render();
+  try {
+    appendLog('Triggering Storybook rebuild…');
+    await triggerStorybookDeploy(state.settings);
+    state.storybookDeployMessage =
+      'Rebuild triggered — check the repo\'s Actions tab for progress, then run "Refresh status" once it finishes.';
+    appendLog('Storybook rebuild triggered.');
+  } catch (err) {
+    state.storybookDeployError = err instanceof Error ? err.message : String(err);
+    appendLog(`Error: ${state.storybookDeployError}`);
+  } finally {
+    state.storybookDeploying = false;
     render();
   }
 }

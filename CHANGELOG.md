@@ -9,6 +9,44 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.1.0] - 2026-08-04
+
+### Added
+- **Status tab** — "Rebuild Storybook" button, always visible, disabled
+  (with a hover tooltip and inline note explaining why) until a compare
+  shows Storybook is stale or was never built. Triggers the tokens repo's
+  `deploy-storybook.yml` workflow via GitHub's `workflow_dispatch` API
+  directly from the plugin, instead of requiring a manual
+  `build-storybook && push` in a terminal. Deliberately not automatic on
+  every push — rebuilding is a user-driven action taken after reviewing
+  what's out of sync.
+- **Status tab** — "View Storybook (local)" button. Checks for a dev
+  server at `http://localhost:6006` (`no-cors` probe, since Storybook's
+  dev server sends no CORS headers) before opening it via a new
+  `open-external` plugin message (`figma.openExternal`). If nothing's
+  listening, shows the exact `npm run storybook` command with a one-click
+  copy button instead of opening a dead tab — a plugin has no shell
+  access in either execution context, so it can only detect the server,
+  never start it.
+
+### Changed
+- Personal access token guidance now calls out that the token also needs
+  `Actions: read/write` (in addition to `Contents: read/write`) for the
+  new button to work.
+- README/PROJECT.md rewritten to match the current architecture: the DTCG
+  reference-aware token model (`design-sync-schema`), all six token
+  categories (including `string`/`boolean`), both new Status tab buttons,
+  CI, and the tokens repo's now-manual (`workflow_dispatch`-only) deploy
+  workflow. Both previously described a pre-Phase-1 flat-value token model
+  and were significantly out of date.
+
+### Fixed
+- Plugin failed to load at all ("unable to run") after adding
+  `http://localhost:6006` directly to `networkAccess.allowedDomains` —
+  that key only accepts `https://` domains, so a plain-HTTP entry fails
+  manifest validation outright. Moved to the separate `devAllowedDomains`
+  key, which exists specifically for local/non-HTTPS development domains.
+
 ## [1.0.1] - 2026-07-28
 
 ### Added
