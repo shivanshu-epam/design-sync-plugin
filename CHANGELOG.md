@@ -9,6 +9,17 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.4.4] - 2026-08-04
+
+### Changed
+- **Sync tab now sorts each category's rows by whether they need a
+  decision.** Real conflicts (Use Figma/Use GitHub/Skip) sort first,
+  new-on-one-side rows (Include in sync checkbox) next, and cascade-only
+  rows (see 1.4.2 — nothing to decide, they settle on their own) last —
+  previously all three sorted together alphabetically, burying the rows
+  that actually need attention among ones that don't. Sort is stable, so
+  each tier keeps its original alphabetical order.
+
 ## [1.4.3] - 2026-08-04
 
 ### Fixed

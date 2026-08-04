@@ -1159,7 +1159,7 @@ function renderSyncTab(): HTMLElement {
       }
 
       for (const category of TOKEN_CATEGORIES) {
-        const rows = changed.filter((d) => d.category === category);
+        const rows = changed.filter((d) => d.category === category).sort((a, b) => diffRowPriority(a) - diffRowPriority(b));
         if (rows.length === 0) continue;
         const group = el('div', { className: 'diff-group' });
         group.appendChild(el('h2', {}, [category]));
@@ -1195,6 +1195,17 @@ function renderSyncTab(): HTMLElement {
 
   container.appendChild(el('pre', { id: 'log', textContent: state.log.join('\n') }));
   return container;
+}
+
+// Rows that need an actual decision (real conflicts, then new-on-one-side
+// opt-outs) come first; cascade-only rows — nothing to decide, they settle
+// on their own once their underlying reference is handled — sort last.
+// Array.prototype.sort is stable, so within a tier the original alphabetical
+// key order (set by diffTokenSets) is preserved.
+function diffRowPriority(d: DiffEntry): number {
+  if (d.status === 'modified' && !d.cascadeOnly) return 0;
+  if (d.status === 'added-figma' || d.status === 'added-github') return 1;
+  return 2; // cascadeOnly
 }
 
 function renderDiffRow(d: DiffEntry): HTMLElement {
