@@ -32,6 +32,32 @@ build time).
   including one that reproduces the exact "Use GitHub resolution, GitHub
   already matches" scenario that exposed this gap.
 
+## [1.9.1] - 2026-08-04
+
+### Fixed
+- **1.9.0 itself 422'd: "Opening pull request failed: 422 Validation
+  Failed."** Found immediately while the user tested 1.9.0's own fix.
+  Root cause: in the "GitHub already matches, only Figma needs updating"
+  case, `design-tokens.json` was correctly left uncommitted (nothing to
+  change there) — but that meant NO commit existed on the branch at all
+  before `createPullRequest` was called, and GitHub rejects opening a PR
+  from a branch with zero commits ahead of base ("No commits between
+  main and design-sync/..."). The audit-log entry — the thing meant to
+  make this sync visible — was only being committed *after* the PR, too
+  late to help.
+  Fixed by reordering: the audit-log entry now commits FIRST, with
+  placeholder `prNumber`/`prUrl` (0 / `''`), which works because that
+  entry always has genuinely new content (an appended JSONL line) —
+  guaranteeing the branch diverges from base regardless of whether the
+  tokens file itself needs a commit. Once the PR exists, a second small
+  commit (`patchLastAuditLogEntry`) rewrites just that last line with
+  the real PR number/URL. Considered instead just committing
+  `design-tokens.json` unconditionally (even with identical content) to
+  force a diverging commit, but that relies on an unverified assumption
+  about whether GitHub's Contents API creates a real commit object for
+  byte-identical content — rejected in favor of a mechanism with no such
+  assumption.
+
 ## [1.8.2] - 2026-08-04
 
 ### Fixed

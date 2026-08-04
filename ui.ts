@@ -448,11 +448,19 @@ function parseAuditLog(text: string): AuditEntry[] {
 // edited, or from a future plugin version with a different shape) must
 // never block appending a new one; this file's job is to always accept a
 // new line, not to validate history it didn't write.
+// Committed BEFORE the PR exists (see runSync) — entry.prNumber/prUrl are
+// placeholders at this point (0 / ''), patched to the real values by
+// patchLastAuditLogEntry once the PR is created. This ordering is
+// deliberate: GitHub rejects PR creation with a 422 ("No commits between
+// X and Y") if the branch has no commit yet, and this entry — always
+// genuinely new content, since it's an appended line — is what guarantees
+// that first commit exists, regardless of whether design-tokens.json
+// itself needed to change.
 async function appendAuditLogEntry(settings: GithubSettings, branch: string, entry: AuditEntry): Promise<void> {
   const { text, sha } = await fetchAuditLogRaw(settings, branch);
   const withTrailingNewline = text.length > 0 && !text.endsWith('\n') ? `${text}\n` : text;
   const payload: Record<string, unknown> = {
-    message: `Design Sync: record audit entry for PR #${entry.prNumber}`,
+    message: 'Design Sync: record audit entry',
     content: encodeBase64Utf8(`${withTrailingNewline}${JSON.stringify(entry)}\n`),
     branch,
   };
@@ -465,6 +473,36 @@ async function appendAuditLogEntry(settings: GithubSettings, branch: string, ent
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(`Recording audit entry failed: ${res.status} ${body.message ?? res.statusText}`);
+  }
+}
+
+// Rewrites just the LAST line of audit-log.jsonl with the real PR
+// number/URL, once the PR that appendAuditLogEntry's placeholder was
+// waiting on actually exists. Doesn't parse/touch any earlier lines
+// (a malformed old line shouldn't block this any more than it blocks
+// appendAuditLogEntry itself).
+async function patchLastAuditLogEntry(settings: GithubSettings, branch: string, prNumber: number, prUrl: string): Promise<void> {
+  const { text, sha } = await fetchAuditLogRaw(settings, branch);
+  const lines = text.split('\n').filter((l) => l.trim());
+  if (lines.length === 0) return; // nothing to patch — shouldn't happen, but not fatal if it does
+  const last = JSON.parse(lines[lines.length - 1]) as AuditEntry;
+  last.prNumber = prNumber;
+  last.prUrl = prUrl;
+  lines[lines.length - 1] = JSON.stringify(last);
+  const payload: Record<string, unknown> = {
+    message: `Design Sync: link audit entry to PR #${prNumber}`,
+    content: encodeBase64Utf8(`${lines.join('\n')}\n`),
+    branch,
+  };
+  if (sha) payload.sha = sha;
+  const res = await githubRequest(`/repos/${settings.owner}/${settings.repo}/contents/${AUDIT_LOG_PATH}`, settings, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(`Linking audit entry to PR failed: ${res.status} ${body.message ?? res.statusText}`);
   }
 }
 
@@ -1756,11 +1794,25 @@ async function runSync() {
       const baseSha = await getBranchHeadSha(settings, settings.branch);
       await createBranch(settings, branch, baseSha);
 
+      // Audit entry FIRST, with placeholder PR fields, patched to the real
+      // values once the PR exists below. This ordering is deliberate, not
+      // incidental: a real 422 ("No commits between main and
+      // design-sync/...") was hit when the tokens file didn't need a
+      // commit (githubChanged false) and nothing else had been committed
+      // yet — GitHub refuses to open a PR from a branch with zero commits
+      // ahead of base. This entry always has genuinely new content (an
+      // appended line), so it's guaranteed to give the branch a real
+      // commit before PR creation, regardless of whether the tokens file
+      // itself changed.
+      const timestamp = new Date().toISOString();
+      const changes: AuditChange[] = computeAuditChanges(final, state.githubTokens, state.resolutions);
+      const actor = await fetchGithubUsername(settings);
+      appendLog('Recording this sync…');
+      await appendAuditLogEntry(settings, branch, { timestamp, actor, prNumber: 0, prUrl: '', branch, changes });
+
       if (githubChanged) {
         appendLog('Committing merged tokens to the new branch…');
         await commitGithubTokens(settings, final, state.githubSha, branch);
-      } else {
-        appendLog(`GitHub's ${settings.path} already matches — nothing to commit there, only recording this sync's effect on Figma.`);
       }
 
       const changedCount = state.diff.filter((d) => d.status !== 'unchanged' && !(state.resolutions[`${d.category}:${d.key}`] === 'skip')).length;
@@ -1771,11 +1823,10 @@ async function runSync() {
       try {
         pr = await createPullRequest(settings, branch, 'Design Sync: update design tokens', prBody);
       } catch (err) {
-        // The branch (+ commit, if githubChanged) above already succeeded —
-        // leaving it behind would just accumulate dead `design-sync/sync-*`
-        // branches every time this fails (e.g. a PAT missing Pull requests:
-        // write). Clean it up so a retry starts fresh instead of leaving
-        // orphans.
+        // The branch (+ commits above) already succeeded — leaving it
+        // behind would just accumulate dead `design-sync/sync-*` branches
+        // every time this fails (e.g. a PAT missing Pull requests: write).
+        // Clean it up so a retry starts fresh instead of leaving orphans.
         appendLog(`Opening pull request failed — deleting branch ${branch}…`);
         await deleteBranch(settings, branch).catch(() => {});
         throw err;
@@ -1792,22 +1843,15 @@ async function runSync() {
       postToPlugin({ type: 'save-history', entry: historyEntry });
       state.pendingPr = { number: pr.number, url: pr.url, state: 'open' };
 
-      // Audit trail (Phase 5): record what this sync actually changed —
-      // computeAuditChanges only reflects GitHub-side content changes, so
-      // in the Figma-only case (githubChanged false) this can legitimately
-      // be an empty array; the PR/branch still exists so History and
-      // notifications know the sync happened, even with no per-token diff
-      // to show. Committed to the same branch as the tokens themselves, so
-      // it's part of the same PR the reviewer sees — best-effort: a failed
-      // audit-log write shouldn't fail a sync whose real work (the PR) has
-      // already succeeded, so it's logged as a warning, not thrown.
-      const changes: AuditChange[] = computeAuditChanges(final, state.githubTokens, state.resolutions);
+      // Link the audit entry committed above to the PR that now exists —
+      // best-effort: a failed patch shouldn't fail a sync whose real work
+      // (the PR, and the audit entry's actual content) has already
+      // succeeded. Worst case, History shows this entry linked to PR #0
+      // until manually corrected — cosmetic, not data loss.
       try {
-        const actor = await fetchGithubUsername(settings);
-        const auditEntry: AuditEntry = { timestamp: historyEntry.timestamp, actor, prNumber: pr.number, prUrl: pr.url, branch, changes };
-        await appendAuditLogEntry(settings, branch, auditEntry);
+        await patchLastAuditLogEntry(settings, branch, pr.number, pr.url);
       } catch (err) {
-        appendLog(`Warning: recording the audit entry failed (${err instanceof Error ? err.message : String(err)}) — the sync itself still succeeded.`);
+        appendLog(`Warning: linking the audit entry to PR #${pr.number} failed (${err instanceof Error ? err.message : String(err)}) — the sync itself still succeeded.`);
       }
     } else {
       appendLog('No changes needed — nothing to sync.');
