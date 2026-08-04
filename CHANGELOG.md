@@ -9,6 +9,24 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.3.0] - 2026-08-04
+
+### Added
+- **Connect tab** — "Find repository" search field. "Load my repos" fetches
+  every repo the token can see (`GET /user/repos`, paginated up to 500),
+  then the search field's native `<datalist>` gives type-ahead
+  filtering — selecting a repo auto-fills Repository owner/name (and
+  Branch, if still empty) instead of hand-typing them. Manual entry in
+  the fields below still works exactly as before; this is additive.
+
+### Changed
+- Reordered the Connect tab: Personal access token now comes first, since
+  it's required before "Load my repos" can do anything.
+- Refactored `githubRequest()` into a token-only `githubRequestWithToken()`
+  underneath it, so repo listing (which happens before there's a full
+  `GithubSettings` to work with — owner/repo aren't chosen yet) doesn't
+  duplicate the fetch/header logic.
+
 ## [1.2.2] - 2026-08-04
 
 ### Added

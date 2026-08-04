@@ -81,7 +81,10 @@ even against an out-of-date `design-tokens.json`.
 - **Connect** tab — GitHub owner/repo/branch/file path + a personal access
   token, stored locally via `figma.clientStorage` (never sent anywhere
   except `api.github.com`). See [GitHub token](#github-token) for the
-  scopes it needs.
+  scopes it needs. A "Find repository" search field (native `<datalist>`
+  type-ahead) lists every repo the token can see and auto-fills
+  owner/name/branch on selection, so owner/repo don't need to be typed
+  by hand — manual entry still works too.
 - **Custom Tokens** tab — key/value editor for dimension tokens (spacing,
   radii, etc.), persisted in the Figma file itself.
 - **Sync** tab — fetches current Figma tokens and the GitHub JSON file,

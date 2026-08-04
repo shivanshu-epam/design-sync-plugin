@@ -294,7 +294,7 @@ The Status tab shows this as two explicit sections plus an overall banner:
 
 | Tab | Purpose |
 |---|---|
-| **Connect** | GitHub owner/repo/branch/token-file-path + a personal access token. Saved via `figma.clientStorage` (this machine only). Also shows recent sync history (last 5 pull requests). |
+| **Connect** | GitHub owner/repo/branch/token-file-path + a personal access token. Saved via `figma.clientStorage` (this machine only). A "Find repository" search field lists every repo the token can see (`GET /user/repos`) and auto-fills owner/name/branch on selection — manual entry still works too. Also shows recent sync history (last 5 pull requests). |
 | **Custom Tokens** | Key/value editor for dimension tokens that aren't backed by a Figma Variable (e.g. one-off spacing values). Stored in the Figma file's shared plugin data. |
 | **Sync** | The diff/conflict-resolution/PR flow described in §7. Auto-runs on plugin launch and right after saving Connect settings, so you land on the diff without an extra click. |
 | **Status** | Three-way health check described in §8, a banner for the most recent sync's pull request if it's still open or was closed unmerged, the in-app Storybook setup/update guide, a **"Rebuild Storybook"** button (`workflow_dispatch`-triggers the deploy workflow once something's stale), and a **"View Storybook (local)"** button (checks `localhost:6006` is reachable, opens it if so, otherwise shows the exact `npm run storybook` command with a copy button — a plugin can't start that server itself). |

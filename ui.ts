@@ -147,6 +147,9 @@ const state: {
   localStorybookReachable: boolean | null;
   checkingLocalStorybook: boolean;
   pendingPr: { number: number; url: string; state: 'open' | 'closed' } | null;
+  availableRepos: RepoOption[];
+  loadingRepos: boolean;
+  reposError: string | null;
 } = {
   activeTab: 'connect',
   settings: null,
@@ -171,6 +174,9 @@ const state: {
   localStorybookReachable: null,
   checkingLocalStorybook: false,
   pendingPr: null,
+  availableRepos: [],
+  loadingRepos: false,
+  reposError: null,
 };
 
 function appendLog(line: string) {
@@ -185,7 +191,7 @@ function appendLog(line: string) {
 
 const GITHUB_API = 'https://api.github.com';
 
-async function githubRequest(path: string, settings: GithubSettings, init: RequestInit = {}): Promise<Response> {
+function githubRequestWithToken(path: string, token: string, init: RequestInit = {}): Promise<Response> {
   return fetch(`${GITHUB_API}${path}`, {
     ...init,
     // GitHub's Contents API responses are cacheable (ETag/Cache-Control),
@@ -195,12 +201,16 @@ async function githubRequest(path: string, settings: GithubSettings, init: Reque
     // Every request here needs fresh data, always.
     cache: 'no-store',
     headers: {
-      Authorization: `Bearer ${settings.token}`,
+      Authorization: `Bearer ${token}`,
       Accept: 'application/vnd.github+json',
       'X-GitHub-Api-Version': '2022-11-28',
       ...(init.headers || {}),
     },
   });
+}
+
+async function githubRequest(path: string, settings: GithubSettings, init: RequestInit = {}): Promise<Response> {
+  return githubRequestWithToken(path, settings.token, init);
 }
 
 function encodeContentPath(path: string): string {
@@ -241,6 +251,35 @@ async function triggerStorybookDeploy(settings: GithubSettings): Promise<void> {
     const body = await res.json().catch(() => ({}));
     throw new Error(`Triggering Storybook deploy failed: ${res.status} ${body.message ?? res.statusText}`);
   }
+}
+
+interface RepoOption {
+  fullName: string; // "owner/repo"
+  owner: string;
+  name: string;
+  defaultBranch: string;
+}
+
+// GET /user/repos — every repo the token can see, not filtered by owner,
+// since a fine-grained PAT is typically scoped to just one or two repos
+// anyway (that's the whole point of "fine-grained"). Paginated, capped at
+// 500 repos (5 pages) — plenty for an individual account, and avoids an
+// unbounded fetch loop against an org PAT with broad access.
+async function fetchUserRepos(token: string): Promise<RepoOption[]> {
+  const repos: RepoOption[] = [];
+  for (let page = 1; page <= 5; page++) {
+    const res = await githubRequestWithToken(`/user/repos?per_page=100&page=${page}&sort=full_name`, token);
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new Error(`Listing repositories failed: ${res.status} ${body.message ?? res.statusText}`);
+    }
+    const body = await res.json();
+    for (const r of body) {
+      repos.push({ fullName: r.full_name, owner: r.owner.login, name: r.name, defaultBranch: r.default_branch });
+    }
+    if (body.length < 100) break;
+  }
+  return repos;
 }
 
 async function testConnection(settings: GithubSettings): Promise<{ ok: boolean; message: string }> {
@@ -695,13 +734,68 @@ function renderConnectTab(): HTMLElement {
   const row = (labelText: string, input: HTMLElement) =>
     el('div', { className: 'field' }, [el('label', {}, [labelText]), input]);
 
+  container.appendChild(row('Personal access token (repo scope)', tokenInput));
+
+  // Lets the user pick from repos the token can actually see instead of
+  // hand-typing owner/repo — a fine-grained PAT is usually scoped to just
+  // one or two repos anyway, so this list is typically short. Native
+  // <input list>/<datalist> gives type-ahead filtering for free, no custom
+  // dropdown widget needed.
+  const datalistId = 'repo-options';
+  const repoSearchInput = el('input', {
+    type: 'text',
+    placeholder: state.loadingRepos ? 'Loading…' : 'Type to search, or pick from the list',
+  });
+  // `list` is a read-only IDL property on HTMLInputElement (reflects the
+  // associated <datalist>, doesn't set it) — must go through setAttribute,
+  // not the usual el() prop-assignment path.
+  repoSearchInput.setAttribute('list', datalistId);
+  // .btn-row is a flex row with no stretch behavior of its own (unlike
+  // .field's direct children, which stretch via flex-direction: column +
+  // the default align-items: stretch) — without this the input would
+  // shrink to its default ~20-character width next to the button.
+  repoSearchInput.style.flex = '1';
+  if (state.loadingRepos) repoSearchInput.setAttribute('disabled', 'true');
+  const datalist = el('datalist', { id: datalistId });
+  for (const repo of state.availableRepos) {
+    datalist.appendChild(el('option', { value: repo.fullName }));
+  }
+  repoSearchInput.oninput = () => {
+    const match = state.availableRepos.find((r) => r.fullName === repoSearchInput.value);
+    if (match) {
+      ownerInput.value = match.owner;
+      repoInput.value = match.name;
+      if (!branchInput.value.trim()) branchInput.value = match.defaultBranch;
+    }
+  };
+  const loadReposBtn = el('button', { textContent: state.loadingRepos ? 'Loading…' : 'Load my repos' });
+  if (state.loadingRepos) loadReposBtn.setAttribute('disabled', 'true');
+  loadReposBtn.onclick = () => loadUserRepos(tokenInput.value.trim());
+  container.appendChild(
+    el('div', { className: 'field' }, [
+      el('label', {}, ['Find repository']),
+      el('div', { className: 'btn-row' }, [repoSearchInput, loadReposBtn]),
+    ]),
+  );
+  container.appendChild(datalist);
+  if (state.reposError) {
+    container.appendChild(el('div', { className: 'status-banner error' }, [state.reposError]));
+  } else if (state.availableRepos.length > 0) {
+    container.appendChild(
+      el('p', { className: 'hint' }, [`${state.availableRepos.length} repositor${state.availableRepos.length === 1 ? 'y' : 'ies'} loaded — pick one to fill in the fields below, or type to keep filtering.`]),
+    );
+  } else {
+    container.appendChild(
+      el('p', { className: 'hint' }, ['Paste your token above, then "Load my repos" — or just fill in owner/name manually below.']),
+    );
+  }
+
   container.appendChild(row('Repository owner', ownerInput));
   container.appendChild(row('Repository name', repoInput));
   container.appendChild(el('div', { className: 'row' }, [row('Branch', branchInput), row('Token file path', pathInput)]));
-  container.appendChild(row('Personal access token (repo scope)', tokenInput));
   container.appendChild(
     el('p', { className: 'hint' }, [
-      'Stored locally on this machine only (figma.clientStorage), never leaves it except to talk to api.github.com. Use a fine-grained token scoped to this one repo, with Contents: read/write (branches + commits), Pull requests: read/write (Sync opens a PR rather than committing directly), and Actions: read/write (only needed for the Status tab\'s "Rebuild Storybook" button).',
+      'Token stored locally on this machine only (figma.clientStorage), never leaves it except to talk to api.github.com. Use a fine-grained token scoped to this one repo, with Contents: read/write (branches + commits), Pull requests: read/write (Sync opens a PR rather than committing directly), and Actions: read/write (only needed for the Status tab\'s "Rebuild Storybook" button).',
     ]),
   );
 
@@ -1464,6 +1558,25 @@ async function runCompare() {
     appendLog(`Error: ${state.syncError}`);
   } finally {
     state.comparing = false;
+    render();
+  }
+}
+
+async function loadUserRepos(token: string) {
+  if (!token) {
+    state.reposError = 'Enter your personal access token above first.';
+    render();
+    return;
+  }
+  state.loadingRepos = true;
+  state.reposError = null;
+  render();
+  try {
+    state.availableRepos = await fetchUserRepos(token);
+  } catch (err) {
+    state.reposError = err instanceof Error ? err.message : String(err);
+  } finally {
+    state.loadingRepos = false;
     render();
   }
 }
