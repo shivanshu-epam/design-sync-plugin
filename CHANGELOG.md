@@ -32,6 +32,40 @@ build time).
   including one that reproduces the exact "Use GitHub resolution, GitHub
   already matches" scenario that exposed this gap.
 
+## [1.11.0] - 2026-08-04
+
+### Added
+- **Static status page (Phase 9, second half — notifications were the
+  first, v1.8.0).** `design-tokens` gains `scripts/generate-status-page.mjs`,
+  writing `status.html` into `storybook-static/` on every Storybook
+  rebuild — a bookmarkable, no-login page showing the last build time
+  and the full recent-activity feed from `.design-sync/audit-log.jsonl`
+  (actor, PR link, per-token changes), so anyone can check what's been
+  happening without opening Figma or the plugin. Status tab now links to
+  it (assumes the standard `owner.github.io/repo/` Pages URL — best
+  effort, not verified, since there's no API to check for a custom
+  domain).
+
+### Deviation from the original roadmap spec
+`design-sync-roadmap-phases-1-11.md`'s Phase 9 described this page as
+reflecting "current Figma↔GitHub↔Storybook state," refreshed on every
+CI run. Neither is what got built, for two concrete reasons:
+- **No live Figma state.** A CI-generated static page has no access to
+  Figma at all — only the plugin, running inside Figma, can know that.
+  The page is upfront about this (a footer note points back to the
+  plugin's own Status tab) rather than implying a check it can't do.
+- **Can't refresh on every sync.** GitHub Pages' `deploy-pages` action
+  replaces the *entire* site on every run — a status page regenerated in
+  a separate workflow (e.g. triggered the same way `notify-on-sync.yml`
+  is, on every audit-log push) would silently wipe out the real
+  Storybook content on its next deploy. So generation is tied to
+  Storybook's own existing manual rebuild trigger instead. A "Storybook
+  matches current tokens" boolean computed at build time would also
+  always be trivially true right after the build that computed it — not
+  informative — so the page shows the last-build timestamp next to the
+  full activity list instead, letting a visitor judge staleness
+  themselves from what's listed after that time.
+
 ## [1.10.1] - 2026-08-04
 
 ### Changed

@@ -1641,6 +1641,20 @@ function renderStatusTab(): HTMLElement {
     container.appendChild(el('div', { className: 'status-banner error' }, [state.storybookDeployError]));
   }
 
+  // Assumes the standard GitHub Pages project-site URL
+  // (owner.github.io/repo/) — right for the common case, but wrong if a
+  // custom domain is configured; no API call exists to look that up, so
+  // this is a best-effort link, not a verified one.
+  if (state.settings) {
+    const statusPageUrl = `https://${state.settings.owner}.github.io/${state.settings.repo}/status.html`;
+    container.appendChild(
+      el('p', { className: 'hint' }, [
+        'Bookmarkable activity page (updates on each Storybook rebuild): ',
+        el('a', { href: statusPageUrl, target: '_blank', textContent: statusPageUrl }),
+      ]),
+    );
+  }
+
   container.appendChild(renderStorybookGuide());
 
   return container;
