@@ -9,6 +9,45 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.8.0] - 2026-08-04
+
+### Added
+- **Connect tab — "Notifications (optional)" setup guide** for Teams
+  and/or Slack (Phase 9, adapted — see deviation note below), plus a
+  "Send test notification" button that triggers the tokens repo's new
+  `notify-on-sync.yml` via `workflow_dispatch`, same pattern as the
+  existing "Rebuild Storybook" button.
+- **`design-tokens` repo**: `scripts/notify-on-sync.mjs` +
+  `.github/workflows/notify-on-sync.yml` — posts a plain-text summary
+  (actor, PR link, token count) whenever `.design-sync/audit-log.jsonl`
+  gets a new entry. `TEAMS_WEBHOOK_URL` and `SLACK_WEBHOOK_URL` are both
+  optional repository secrets, independent of each other — set one, the
+  other, or both.
+
+### Deviation from the original roadmap spec
+`design-sync-roadmap-phases-1-11.md`'s Phase 9 specified Slack only,
+with a Block Kit payload. This implementation covers Teams first (per
+explicit request — Teams is what's actually used), with Slack as an
+equally-supported second provider from the start rather than a later
+addition, and both share a plain-text `{"text": "..."}` payload instead
+of a platform-specific rich format — Teams' Adaptive Card markdown and
+Slack's mrkdwn are mutually incompatible, and this script has no way to
+know in advance which provider(s) a given deployment has configured.
+- **The webhook URL is not handled by the plugin at all** — considered
+  and explicitly rejected doing this via GitHub's Secrets API (would
+  need a new PAT scope, `Secrets: write`, plus a client-side encryption
+  dependency to satisfy the API's sealed-box requirement). The plugin
+  only guides setup and offers a test button; the secret itself is
+  pasted into GitHub's own Secrets UI, matching the original spec's own
+  reasoning for why a webhook URL shouldn't live in per-machine
+  `figma.clientStorage` in the first place.
+- **Teams' classic "Connectors" incoming webhooks are retired** — the
+  setup guide targets the current replacement, the Workflows app
+  (Power Automate), using its built-in "Post to a channel when a webhook
+  request is received" template.
+- **No static status page** (the other half of the original Phase 9 spec)
+  — not built in this pass; still open if wanted later.
+
 ## [1.7.0] - 2026-08-04
 
 ### Changed

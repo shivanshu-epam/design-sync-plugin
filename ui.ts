@@ -163,6 +163,9 @@ const state: {
   // or null — a string id rather than a boolean since only one revert can
   // run at a time but the UI needs to know WHICH row's button to disable.
   reverting: string | null;
+  notifyTestSending: boolean;
+  notifyTestMessage: string | null;
+  notifyTestError: string | null;
 } = {
   activeTab: 'connect',
   settings: null,
@@ -195,6 +198,9 @@ const state: {
   auditLogError: null,
   auditLogLoaded: false,
   reverting: null,
+  notifyTestSending: false,
+  notifyTestMessage: null,
+  notifyTestError: null,
 };
 
 function appendLog(line: string) {
@@ -268,6 +274,23 @@ async function triggerStorybookDeploy(settings: GithubSettings): Promise<void> {
   if (res.status !== 204) {
     const body = await res.json().catch(() => ({}));
     throw new Error(`Triggering Storybook deploy failed: ${res.status} ${body.message ?? res.statusText}`);
+  }
+}
+
+// Same dispatch pattern as triggerStorybookDeploy — this workflow must
+// already exist in the tokens repo (scripts/notify-on-sync.mjs +
+// .github/workflows/notify-on-sync.yml). No pre-check for that here,
+// consistent with triggerStorybookDeploy: a missing workflow file just
+// surfaces as a 404 from the dispatch call itself, which is clear enough.
+async function triggerNotifyTest(settings: GithubSettings): Promise<void> {
+  const res = await githubRequest(
+    `/repos/${settings.owner}/${settings.repo}/actions/workflows/notify-on-sync.yml/dispatches`,
+    settings,
+    { method: 'POST', body: JSON.stringify({ ref: settings.branch }) },
+  );
+  if (res.status !== 204) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(`Sending test notification failed: ${res.status} ${body.message ?? res.statusText}`);
   }
 }
 
@@ -809,6 +832,13 @@ function renderConnectTab(): HTMLElement {
     }
   }
 
+  if (isConfigured(state.settings)) {
+    container.appendChild(el('hr', { className: 'section-divider' }));
+    const notifyHeading = el('h2', {}, ['Notifications (optional)']);
+    container.appendChild(notifyHeading);
+    container.appendChild(renderNotificationsGuide());
+  }
+
   return container;
 }
 
@@ -1251,6 +1281,83 @@ function renderPermissionErrorGuide(error: string): HTMLElement | null {
       'Then come back here and click the action again — nothing else needs to change.',
     ]),
   );
+  details.appendChild(body);
+  return details;
+}
+
+// Notifications are CI-driven, not plugin-driven: the webhook URL is a
+// team-shared secret, and figma.clientStorage is explicitly single-machine
+// (same reasoning as the audit log itself living in the repo, not
+// clientStorage). So the plugin's job here is setup guidance + a way to
+// verify it worked, not holding the secret itself — see notify-on-sync.mjs
+// and notify-on-sync.yml in the tokens repo.
+function renderNotificationsGuide(): HTMLElement {
+  const details = el('details', { className: 'setup-guide' });
+  details.appendChild(el('summary', {}, ['Set up Teams or Slack notifications']));
+
+  const body = el('div', {});
+  body.appendChild(
+    el('p', { className: 'hint' }, [
+      'Posts a message whenever a sync lands (see the History tab) — actor, PR link, and how many tokens changed. ' +
+        'Requires ',
+      el('code', {}, ['.github/workflows/notify-on-sync.yml']),
+      ' and ',
+      el('code', {}, ['scripts/notify-on-sync.mjs']),
+      ' to exist in the tokens repo. Set up either provider, or both — neither is required.',
+    ]),
+  );
+
+  body.appendChild(el('p', { className: 'hint' }, [el('strong', {}, ['Microsoft Teams']), ':']));
+  body.appendChild(
+    el('pre', {}, [
+      '1. In the target Teams channel: ⋯ next to the channel name → Workflows\n' +
+        '   (Teams retired classic "Connectors" webhooks — Workflows is the\n' +
+        '   current replacement, built on Power Automate.)\n' +
+        '2. Search the template "Post to a channel when a webhook request is\n' +
+        '   received" → select this channel → Add workflow\n' +
+        '3. Copy the URL it gives you\n' +
+        `4. github.com/${state.settings?.owner ?? '<owner>'}/${state.settings?.repo ?? '<repo>'}` +
+        '/settings/secrets/actions → New repository secret\n' +
+        '   Name: TEAMS_WEBHOOK_URL — Value: the URL from step 3',
+    ]),
+  );
+
+  body.appendChild(el('p', { className: 'hint' }, [el('strong', {}, ['Slack']), ':']));
+  body.appendChild(
+    el('pre', {}, [
+      '1. api.slack.com/apps → Create New App → From scratch\n' +
+        '2. Features → Incoming Webhooks → toggle on\n' +
+        '3. Add New Webhook to Workspace → pick the channel → Allow\n' +
+        '4. Copy the URL (starts hooks.slack.com/services/…)\n' +
+        `5. github.com/${state.settings?.owner ?? '<owner>'}/${state.settings?.repo ?? '<repo>'}` +
+        '/settings/secrets/actions → New repository secret\n' +
+        '   Name: SLACK_WEBHOOK_URL — Value: the URL from step 4',
+    ]),
+  );
+
+  const testBtn = el('button', { textContent: state.notifyTestSending ? 'Sending…' : 'Send test notification' });
+  if (state.notifyTestSending) testBtn.setAttribute('disabled', 'true');
+  testBtn.onclick = async () => {
+    if (!state.settings) return;
+    state.notifyTestSending = true;
+    state.notifyTestMessage = null;
+    state.notifyTestError = null;
+    render();
+    try {
+      await triggerNotifyTest(state.settings);
+      state.notifyTestMessage =
+        'Triggered — check the configured channel(s) in a few seconds. If nothing arrives, confirm the secret name(s) match exactly and the webhook is still valid.';
+    } catch (err) {
+      state.notifyTestError = err instanceof Error ? err.message : String(err);
+    } finally {
+      state.notifyTestSending = false;
+      render();
+    }
+  };
+  body.appendChild(el('div', { className: 'btn-row' }, [testBtn]));
+  if (state.notifyTestMessage) body.appendChild(el('p', { className: 'hint' }, [state.notifyTestMessage]));
+  if (state.notifyTestError) body.appendChild(el('div', { className: 'status-banner error' }, [state.notifyTestError]));
+
   details.appendChild(body);
   return details;
 }
