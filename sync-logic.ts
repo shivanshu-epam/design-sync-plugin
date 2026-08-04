@@ -266,31 +266,52 @@ export interface AuditEntry {
 }
 
 // The audit trail's source of truth for "what did this sync actually
-// change on GitHub" — deliberately the exact same key-by-key comparison
-// githubContentChanged uses (byte-equal final vs. current GitHub content),
-// just collecting the before/after values instead of a boolean, so the two
-// can never disagree about which keys changed.
+// change" — anywhere, not just on GitHub. A key can change in one of two
+// directions: Figma's value wins and gets committed to GitHub (final now
+// matches Figma, GitHub's old value was overwritten), or GitHub's value
+// wins and gets written back to Figma (final now matches GitHub, Figma's
+// old value was overwritten). Comparing final only against githubTokens
+// (an earlier version of this function did exactly that) catches the first
+// direction but is blind to the second: when a resolution pulls GitHub's
+// own already-current value into Figma, final ends up byte-identical to
+// githubTokens, so nothing looks different — even though Figma's old value
+// was genuinely just overwritten. Comparing against BOTH sides and picking
+// whichever one final DIDN'T end up matching is what makes this symmetric.
 export function computeAuditChanges(
   final: TokenSet,
+  figmaTokens: TokenSet,
   githubTokens: TokenSet,
   resolutions: Record<string, Resolution>,
 ): AuditChange[] {
   const changes: AuditChange[] = [];
   for (const category of TOKEN_CATEGORIES) {
     const finalCat = final[category] as Record<string, unknown>;
+    const fCat = figmaTokens[category] as Record<string, unknown>;
     const gCat = githubTokens[category] as Record<string, unknown>;
-    const keys = new Set([...Object.keys(finalCat), ...Object.keys(gCat)]);
+    const keys = new Set([...Object.keys(finalCat), ...Object.keys(fCat), ...Object.keys(gCat)]);
     for (const key of keys) {
       const finalVal = finalCat[key];
+      if (finalVal === undefined) continue; // nothing ended up set for this key
+      const fVal = fCat[key];
       const gVal = gCat[key];
-      if (JSON.stringify(finalVal) === JSON.stringify(gVal)) continue;
-      const changeType: AuditChangeType = gVal === undefined ? 'added' : finalVal === undefined ? 'removed' : 'modified';
+      const finalStr = JSON.stringify(finalVal);
+      const matchesFigma = fVal !== undefined && JSON.stringify(fVal) === finalStr;
+      const matchesGithub = gVal !== undefined && JSON.stringify(gVal) === finalStr;
+      if (matchesFigma && matchesGithub) continue; // both sides already agreed — no change
+
+      // final matches one side (that side "won"); the OTHER side's old
+      // value — the one that got overwritten — is what changed. If final
+      // matches neither exactly (shouldn't happen given how buildSyncPlan
+      // assigns final, but stay defensive), fall back to treating GitHub's
+      // old value as previous, matching this function's original behavior.
+      const previousValue = matchesGithub ? fVal : gVal;
+      const changeType: AuditChangeType = previousValue === undefined ? 'added' : 'modified';
       changes.push({
         key,
         category,
         changeType,
-        ...(gVal !== undefined ? { previousValue: gVal } : {}),
-        ...(finalVal !== undefined ? { newValue: finalVal } : {}),
+        ...(previousValue !== undefined ? { previousValue } : {}),
+        newValue: finalVal,
         resolution: resolutions[`${category}:${key}`] ?? null,
       });
     }

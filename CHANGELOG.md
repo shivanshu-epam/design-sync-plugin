@@ -32,6 +32,26 @@ build time).
   including one that reproduces the exact "Use GitHub resolution, GitHub
   already matches" scenario that exposed this gap.
 
+## [1.9.2] - 2026-08-04
+
+### Fixed
+- **PR, Teams notification, and History all showed "0 changes" for a
+  sync that genuinely changed Figma.** Found immediately after 1.9.1
+  fixed the 422 for the same scenario: a token edited directly on
+  GitHub, resolved as "Use GitHub." `computeAuditChanges` only ever
+  compared `final` against `githubTokens` — the right comparison for a
+  Figma→GitHub change (Figma's value gets committed), but blind to the
+  reverse direction, since resolving "Use GitHub" makes `final`
+  byte-identical to `githubTokens` by construction. Nothing looked
+  different to the function, even though Figma's old value had just
+  been genuinely overwritten.
+  `computeAuditChanges` now takes `figmaTokens` as well and compares
+  `final` against BOTH sides: whichever side's old value final *doesn't*
+  match is what changed. A key changes when it doesn't match both, and
+  "added" now correctly means "had no old value on either side," not
+  just "had no old value on GitHub." 2 new tests cover both directions
+  explicitly (29 total), including the exact reported scenario.
+
 ## [1.9.1] - 2026-08-04
 
 ### Fixed

@@ -226,10 +226,29 @@ test('diffRowPriority: real conflicts sort before added rows, which sort before 
 // computeAuditChanges / canRevertEntry / invertAuditChanges
 // ---------------------------------------------------------------------------
 
-test('computeAuditChanges: records a modified key with before/after values and its resolution', () => {
-  const github = setWithColors({ a: colorToken('#111111') });
+test('computeAuditChanges: Figma→GitHub direction — Figma already has the new value, GitHub is catching up', () => {
+  const figma = setWithColors({ a: colorToken('#222222') }); // already at the new value
+  const github = setWithColors({ a: colorToken('#111111') }); // old value, about to be overwritten
   const final = setWithColors({ a: colorToken('#222222') });
-  const changes = computeAuditChanges(final, github, { 'color:a': 'github' });
+  const changes = computeAuditChanges(final, figma, github, { 'color:a': 'figma' });
+  assert.equal(changes.length, 1);
+  assert.equal(changes[0].changeType, 'modified');
+  assert.equal(changes[0].previousValue && valueOf(changes[0].previousValue as DesignToken<unknown>), '#111111');
+  assert.equal(changes[0].newValue && valueOf(changes[0].newValue as DesignToken<unknown>), '#222222');
+});
+
+test('computeAuditChanges: GitHub→Figma direction — resolved "Use GitHub" where GitHub already matches final', () => {
+  // The exact bug reported in production: a token edited directly on
+  // GitHub, resolved as "Use GitHub" in the plugin. final ends up
+  // byte-identical to githubTokens (nothing to commit there), which is
+  // precisely the case an earlier version of this function was blind to —
+  // it only ever compared final against githubTokens, so "final already
+  // matches github" read as "no change," even though Figma's old value
+  // was genuinely just overwritten.
+  const figma = setWithColors({ a: colorToken('#111111') }); // old value, about to be overwritten
+  const github = setWithColors({ a: colorToken('#222222') }); // already has the new value
+  const final = setWithColors({ a: colorToken('#222222') });
+  const changes = computeAuditChanges(final, figma, github, { 'color:a': 'github' });
   assert.equal(changes.length, 1);
   assert.equal(changes[0].changeType, 'modified');
   assert.equal(changes[0].previousValue && valueOf(changes[0].previousValue as DesignToken<unknown>), '#111111');
@@ -237,16 +256,18 @@ test('computeAuditChanges: records a modified key with before/after values and i
   assert.equal(changes[0].resolution, 'github');
 });
 
-test('computeAuditChanges: a key with no actual difference produces no entry (mirrors githubContentChanged)', () => {
+test('computeAuditChanges: a key with no actual difference on either side produces no entry', () => {
+  const figma = setWithColors({ a: colorToken('#111111') });
   const github = setWithColors({ a: colorToken('#111111') });
   const final = setWithColors({ a: colorToken('#111111') });
-  assert.deepEqual(computeAuditChanges(final, github, {}), []);
+  assert.deepEqual(computeAuditChanges(final, figma, github, {}), []);
 });
 
-test('computeAuditChanges: a key added on GitHub-only side is classified "added" with no previousValue', () => {
+test('computeAuditChanges: a key with no old value on either side is classified "added"', () => {
+  const figma = setWithColors({});
   const github = setWithColors({});
   const final = setWithColors({ a: colorToken('#111111') });
-  const changes = computeAuditChanges(final, github, {});
+  const changes = computeAuditChanges(final, figma, github, {});
   assert.equal(changes.length, 1);
   assert.equal(changes[0].changeType, 'added');
   assert.equal(changes[0].previousValue, undefined);
@@ -261,7 +282,7 @@ test('computeAuditChanges: cascade-only cases (see 1.4.2) never appear — build
   const figma = setWithColors({ 'yellow-5': colorToken('#fffff5'), 'badge-bg': refToken('color/yellow-5') });
   const github = setWithColors({ 'yellow-5': colorToken('#fffff5'), 'badge-bg': refToken('color/yellow-5') });
   const { final } = buildSyncPlan(figma, github, {});
-  assert.deepEqual(computeAuditChanges(final, github, {}), []);
+  assert.deepEqual(computeAuditChanges(final, figma, github, {}), []);
 });
 
 function makeEntry(changes: ReturnType<typeof computeAuditChanges>): AuditEntry {
@@ -269,16 +290,18 @@ function makeEntry(changes: ReturnType<typeof computeAuditChanges>): AuditEntry 
 }
 
 test('canRevertEntry: true when every change is "modified"', () => {
+  const figma = setWithColors({ a: colorToken('#222222') });
   const github = setWithColors({ a: colorToken('#111111') });
   const final = setWithColors({ a: colorToken('#222222') });
-  const entry = makeEntry(computeAuditChanges(final, github, {}));
+  const entry = makeEntry(computeAuditChanges(final, figma, github, {}));
   assert.equal(canRevertEntry(entry), true);
 });
 
 test('canRevertEntry: false when any change is "added" (no well-defined inverse today)', () => {
+  const figma = setWithColors({});
   const github = setWithColors({});
   const final = setWithColors({ a: colorToken('#111111') });
-  const entry = makeEntry(computeAuditChanges(final, github, {}));
+  const entry = makeEntry(computeAuditChanges(final, figma, github, {}));
   assert.equal(canRevertEntry(entry), false);
 });
 
@@ -287,9 +310,10 @@ test('canRevertEntry: false for an entry with zero changes', () => {
 });
 
 test('invertAuditChanges: swaps previous/new value and clears resolution', () => {
+  const figma = setWithColors({ a: colorToken('#222222') });
   const github = setWithColors({ a: colorToken('#111111') });
   const final = setWithColors({ a: colorToken('#222222') });
-  const changes = computeAuditChanges(final, github, { 'color:a': 'github' });
+  const changes = computeAuditChanges(final, figma, github, { 'color:a': 'figma' });
   const inverse = invertAuditChanges(changes);
   assert.equal(inverse[0].changeType, 'modified');
   assert.equal(valueOf(inverse[0].previousValue as DesignToken<unknown>), '#222222');

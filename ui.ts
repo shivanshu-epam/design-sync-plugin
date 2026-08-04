@@ -1805,7 +1805,7 @@ async function runSync() {
       // commit before PR creation, regardless of whether the tokens file
       // itself changed.
       const timestamp = new Date().toISOString();
-      const changes: AuditChange[] = computeAuditChanges(final, state.githubTokens, state.resolutions);
+      const changes: AuditChange[] = computeAuditChanges(final, state.figmaTokens, state.githubTokens, state.resolutions);
       const actor = await fetchGithubUsername(settings);
       appendLog('Recording this sync…');
       await appendAuditLogEntry(settings, branch, { timestamp, actor, prNumber: 0, prUrl: '', branch, changes });
