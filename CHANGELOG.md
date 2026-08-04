@@ -9,6 +9,14 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.3.2] - 2026-08-04
+
+### Added
+- Tooltip on the Connect tab's "Load my repos" button — every other
+  action button in the plugin explains itself on hover, this one didn't,
+  which stood out once the repo picker (v1.3.0/1.3.1) had a few buttons
+  sitting next to each other with only one of them self-explanatory.
+
 ## [1.3.1] - 2026-08-04
 
 ### Changed

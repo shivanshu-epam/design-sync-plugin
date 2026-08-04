@@ -780,7 +780,10 @@ function renderConnectTab(): HTMLElement {
       if (!branchInput.value.trim()) branchInput.value = match.defaultBranch;
     }
   };
-  const loadReposBtn = el('button', { textContent: state.loadingRepos ? 'Loading…' : 'Load my repos' });
+  const loadReposBtn = el('button', {
+    textContent: state.loadingRepos ? 'Loading…' : 'Load my repos',
+    title: 'Fetch every repository the token above can see, via GET /user/repos',
+  });
   if (state.loadingRepos) loadReposBtn.setAttribute('disabled', 'true');
   loadReposBtn.onclick = () => loadUserRepos(tokenInput.value.trim());
   container.appendChild(
