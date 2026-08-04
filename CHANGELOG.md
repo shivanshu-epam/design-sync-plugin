@@ -9,6 +9,39 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.5.0] - 2026-08-04
+
+### Added
+- **Test coverage for the Sync tab's core logic (Phase 5 candidate,
+  picked over rollback/audit-trail work — see PROJECT.md §11).** Every
+  bug fixed in this project so far was found by manually reading a
+  user-pasted log, never by a test catching it first. `diffTokenSets`,
+  `buildSyncPlan`, `preferLiveFigmaExtensions`, `resolveForFigmaApply`,
+  `diffRowPriority`, and the new `githubContentChanged` (extracted from
+  `runSync`'s inline check) are plain functions over `TokenSet` data —
+  no `figma.*`, no `fetch`, no DOM — so they're testable without a Figma
+  runtime or a browser. Moved out of `ui.ts` into a new `sync-logic.ts`
+  specifically so they could be imported directly by a test file; `ui.ts`
+  now imports them back. 17 tests in `sync-logic.test.ts`, covering the
+  real bugs already found and fixed this session (the reference-cascade
+  false-conflict from 1.4.2, the delta-vs-full-set bug from 1.4.1, the
+  empty-PR case from 1.4.3) so they can't silently regress.
+- `npm test` — compiles `sync-logic.ts`/`sync-logic.test.ts` with a new
+  `tsconfig.test.json` (CommonJS output to a gitignored `dist-test/`,
+  kept separate from the plugin's own ESM build) and runs them with
+  Node's built-in `node --test`, matching the zero-extra-dependency
+  approach `design-sync-schema` already uses for its own test suite.
+
+### Fixed
+- Adding `@types/node` (needed for `node:test`/`node:assert` types) broke
+  the plugin's own build — TypeScript auto-includes every package under
+  `typeRoots` by default, so `@types/node`'s `console`/`fetch` globals
+  collided with `@figma/plugin-typings`' own versions of the same
+  globals. `tsconfig.json` (the `code.ts` config — this runs in Figma's
+  sandbox, never Node) now explicitly restricts `types` to
+  `plugin-typings` only, rather than relying on the implicit
+  include-everything default.
+
 ## [1.4.4] - 2026-08-04
 
 ### Changed

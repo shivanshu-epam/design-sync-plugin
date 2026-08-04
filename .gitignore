@@ -5,6 +5,7 @@ node_modules
 
 out/
 dist/
+dist-test/
 code.js
 ui.html
 

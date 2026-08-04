@@ -27,6 +27,6 @@ module.exports = tseslint.config(
     },
   },
   {
-    ignores: ['code.js', 'ui.html', 'dist', 'eslint.config.js', 'scripts/**'],
+    ignores: ['code.js', 'ui.html', 'dist', 'dist-test', 'eslint.config.js', 'scripts/**'],
   },
 )

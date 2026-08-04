@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "es2020",
+    "lib": ["es2020"],
+    "strict": true,
+    "moduleResolution": "node10",
+    "module": "commonjs",
+    "esModuleInterop": true,
+    "outDir": "dist-test",
+    "typeRoots": ["./node_modules/@types"]
+  },
+  "include": ["sync-logic.ts", "sync-logic.test.ts", "shared/**/*.ts"]
+}

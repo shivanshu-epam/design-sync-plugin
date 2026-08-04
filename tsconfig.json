@@ -8,7 +8,13 @@
     "typeRoots": [
       "./node_modules/@types",
       "./node_modules/@figma"
-    ]
+    ],
+    // Without this, TS auto-includes every package under typeRoots — once
+    // @types/node was added for the sync-logic test suite, its globals
+    // (console, fetch) collided with @figma/plugin-typings' own versions
+    // of the same globals, breaking this build. code.ts runs in Figma's
+    // sandbox, never Node, so @types/node has no business being visible here.
+    "types": ["plugin-typings"]
   },
   "include": ["code.ts", "shared/**/*.ts"]
 }
