@@ -247,6 +247,11 @@ async function readFigmaVariables(): Promise<VariableTokens> {
       const extensions = {
         'design-sync.figmaSourceType': 'variable' as const,
         'design-sync.variableId': variable.id,
+        // Which of this variable's modes this specific value is from —
+        // needed on write-back (applyVariableValue) to know which mode to
+        // call setValueForMode on; the variable id alone is ambiguous for
+        // any collection with more than one mode.
+        'design-sync.modeId': mode.modeId,
       };
 
       if (raw && typeof raw === 'object' && 'type' in raw && raw.type === 'VARIABLE_ALIAS') {
@@ -420,6 +425,42 @@ async function applyShadowToken(name: string, value: ShadowLayer[], existing: Ef
   style.effects = effects;
 }
 
+// Phase 2: write-back to a real Figma Variable, for a token that was
+// originally read FROM one (carries variableId + modeId in $extensions).
+// Returns false — never throws — for anything that means "write a Style
+// or the custom-tokens blob instead": the variable was deleted upstream,
+// the resolved type no longer matches what this token category expects,
+// or the mode itself no longer exists on the variable's collection. A
+// dead reference to a since-deleted variable shouldn't lose the token's
+// value entirely, just fall back to the same path a token with no Figma
+// variable history at all would take.
+async function applyVariableValue(variableId: string, modeId: string, category: TokenCategory, value: unknown): Promise<boolean> {
+  const variable = await figma.variables.getVariableByIdAsync(variableId);
+  if (!variable) return false;
+
+  let converted: VariableValue;
+  if (category === 'color' && variable.resolvedType === 'COLOR' && typeof value === 'string') {
+    converted = hexToRgba(value);
+  } else if (category === 'dimension' && variable.resolvedType === 'FLOAT' && typeof value === 'string') {
+    const n = parseFloat(value);
+    if (Number.isNaN(n)) return false;
+    converted = n;
+  } else if (category === 'string' && variable.resolvedType === 'STRING' && typeof value === 'string') {
+    converted = value;
+  } else if (category === 'boolean' && variable.resolvedType === 'BOOLEAN' && typeof value === 'boolean') {
+    converted = value;
+  } else {
+    return false; // type mismatch — the variable's own type changed since this token was read
+  }
+
+  try {
+    variable.setValueForMode(modeId, converted);
+    return true;
+  } catch {
+    return false; // e.g. the mode itself was removed from the collection since this token was read
+  }
+}
+
 async function applyTokensToFigma(tokens: TokenSet): Promise<void> {
   const [paintStyles, textStyles, effectStyles] = await Promise.all([
     figma.getLocalPaintStylesAsync(),
@@ -430,40 +471,62 @@ async function applyTokensToFigma(tokens: TokenSet): Promise<void> {
   const textByName = new Map(textStyles.map((s) => [s.name, s]));
   const effectByName = new Map(effectStyles.map((s) => [s.name, s]));
 
-  // Styles have no alias concept, so every value here must already be
-  // concrete ({ kind: 'value' }) by the time it reaches code.ts — ui.ts
-  // resolves any reference against the full merged token set before
-  // sending. Skip defensively rather than crash if one somehow arrives
-  // unresolved (Phase 2 will add a real Variable write-back path for these).
+  // Styles/Variables have no alias concept, so every value here must
+  // already be concrete ({ kind: 'value' }) by the time it reaches
+  // code.ts — ui.ts resolves any reference against the full merged token
+  // set before sending. Skip defensively rather than crash if one somehow
+  // arrives unresolved.
+  //
+  // For each token, try writing back to the real Figma Variable it came
+  // from first (Phase 2) — only fall through to the Style/custom-blob path
+  // if it was never variable-backed, or the variable it was backed by has
+  // since been deleted/retyped in Figma.
+  const variableExtensions = (token: DesignToken<unknown>): { variableId: string; modeId: string } | null => {
+    const ext = token.$extensions;
+    if (ext?.['design-sync.figmaSourceType'] !== 'variable') return null;
+    const variableId = ext['design-sync.variableId'];
+    const modeId = ext['design-sync.modeId'];
+    if (!variableId || !modeId) return null;
+    return { variableId, modeId };
+  };
+
   for (const [name, token] of Object.entries(tokens.color)) {
     if (token.$value.kind !== 'value') continue;
-    await applyColorToken(name, token.$value.value, paintByName.get(name));
+    const ext = variableExtensions(token);
+    const wroteVariable = ext && (await applyVariableValue(ext.variableId, ext.modeId, 'color', token.$value.value));
+    if (!wroteVariable) await applyColorToken(name, token.$value.value, paintByName.get(name));
   }
   for (const [name, token] of Object.entries(tokens.typography)) {
     if (token.$value.kind !== 'value') continue;
+    // No Figma Variable type maps to a full typography value (font family,
+    // size, line-height, letter-spacing together) — always a Style.
     await applyTypographyToken(name, token.$value.value, textByName.get(name));
   }
   for (const [name, token] of Object.entries(tokens.shadow)) {
     if (token.$value.kind !== 'value') continue;
+    // Same — no Figma Variable type represents a multi-layer shadow.
     await applyShadowToken(name, token.$value.value, effectByName.get(name));
   }
 
-  // Only the hand-entered "Custom Tokens" tab entries need persisting here —
-  // variable-derived dimension/string/boolean tokens are always re-read
-  // live from Figma's Variables on the next readFigmaTokens() call, so
-  // duplicating them into plugin data is both unnecessary and, at scale
-  // (thousands of variables), exactly what blows past Figma's
-  // 100kB-per-entry pluginData limit.
-  const variables = await readFigmaVariables();
+  // Dimension/string/boolean have no native Figma style type at all — a
+  // value here either writes back to the real Variable it came from
+  // (Phase 2), or, for genuinely hand-entered "Custom Tokens" tab values
+  // with no Figma variable history, persists in plugin data. Variable
+  // write-back means there's nothing left to duplicate into plugin data
+  // for those — re-reading the variable live on the next
+  // readFigmaTokens() call is both simpler and avoids re-triggering
+  // Figma's 100kB-per-entry pluginData limit at scale (thousands of
+  // variables).
   const custom: CustomTokens = emptyCustomTokens();
-  for (const [key, value] of Object.entries(tokens.dimension)) {
-    if (!(key in variables.dimension)) custom.dimension[key] = value;
-  }
-  for (const [key, value] of Object.entries(tokens.string)) {
-    if (!(key in variables.string)) custom.string[key] = value;
-  }
-  for (const [key, value] of Object.entries(tokens.boolean)) {
-    if (!(key in variables.boolean)) custom.boolean[key] = value;
+  for (const category of ['dimension', 'string', 'boolean'] as const) {
+    const bucket = tokens[category] as Record<string, DesignToken<unknown>>;
+    const customBucket = custom[category];
+    for (const [key, token] of Object.entries(bucket)) {
+      if (token.$value.kind !== 'value') continue;
+      const ext = variableExtensions(token);
+      const wroteVariable = ext && (await applyVariableValue(ext.variableId, ext.modeId, category, token.$value.value));
+      if (!wroteVariable) (customBucket as Record<string, DesignToken<unknown>>)[key] = token;
+    }
   }
   const serialized = JSON.stringify(custom);
   const byteLength = utf8ByteLength(serialized);

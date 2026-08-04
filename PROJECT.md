@@ -234,13 +234,20 @@ path described above.
    c. Open a pull request: new branch → `settings.branch`. Nothing lands
       on the branch Storybook/downstream builds consume without someone
       merging that PR.
-   d. Apply GitHub-side resolutions back onto Figma — creates/updates
-      Paint/Text/Effect **styles** (not Variables — see limitations).
-      Custom dimension tokens are written back to `figma.root`'s shared
-      plugin data; variable-derived dimension tokens never are (see §10,
-      bug #5). This happens immediately, **not** gated on the PR merging —
-      Figma is a local design file, not the shared repo the review gate
-      protects, so there's nothing to review-gate here.
+   d. Apply GitHub-side resolutions back onto Figma. As of Phase 2, a
+      token that was originally read *from* a Figma Variable (has
+      `design-sync.variableId` + `design-sync.modeId` in `$extensions`)
+      writes back to that same variable's mode
+      (`variable.setValueForMode`) — everything else (brand-new tokens
+      with no Figma variable history, plus typography/shadow, which have
+      no Figma Variable type at all) still creates/updates a Paint/Text/
+      Effect **style**. Custom dimension/string/boolean tokens with no
+      variable history are written to `figma.root`'s shared plugin data;
+      variable-backed ones are not (they're re-read live from the
+      variable itself on the next `readFigmaTokens()` call). This happens
+      immediately, **not** gated on the PR merging — Figma is a local
+      design file, not the shared repo the review gate protects, so
+      there's nothing to review-gate here.
 
    Because `settings.branch` itself is never written to directly, its SHA
    never changes as a side effect of Sync — the original reason for
@@ -379,14 +386,37 @@ gets rebuilt or extended later.
    Status tab's pending-PR banner exists specifically to make that
    reading obvious instead of alarming.
 
+10. **Resolving a conflict in GitHub's favor for a variable-backed
+    dimension/string/boolean token silently did nothing** — found while
+    building Phase 2's write-back. `applyTokensToFigma` excluded any key
+    matching a *currently live* Figma variable from the plugin-data write
+    (reasonable — those re-read live, no need to duplicate them), but
+    nothing else ever wrote the resolved value anywhere either. The
+    exclusion check itself was also fragile: "does a live variable happen
+    to have this exact key name right now" is a proxy for "was this
+    variable-derived," and breaks the moment a variable is renamed. Fixed
+    by reading each token's own `$extensions` (the authoritative answer,
+    already computed at read time) instead of re-deriving it from
+    current variable names, and by actually writing the value back via
+    `variable.setValueForMode` when that's what it points at.
+
 ---
 
 ## 11. What's explicitly out of scope (for now)
 
-- **Writing real Figma Variables back.** Pulling a GitHub-only token into
-  Figma creates/updates a *style*, not a Variable with collections/modes.
-  Reading Variables works both ways is a real gap; writing them is a
-  separate, larger piece of work.
+- **Creating brand-new Figma Variables.** Write-back (§7 step 5d) only
+  re-links a token to a variable it already has documented history with
+  (`design-sync.variableId`/`modeId` in `$extensions`, set at read time).
+  A token with no such history — brand-new from GitHub — still becomes a
+  Style, since there's no collection/mode to place a genuinely new
+  variable in without asking the user to choose one.
+- **Native `VARIABLE_ALIAS` write-back.** A token whose value is itself a
+  reference always gets resolved to a concrete value before being
+  written, even when the destination is a real Variable. Figma Variables
+  do support aliasing another variable, but doing that safely requires
+  the reference's target to itself be a known Figma variable, which
+  isn't guaranteed — e.g. a GitHub-only reference chain has no Figma-side
+  variable to point at.
 - **No required-review enforcement, no merge automation.** Sync opens a PR
   (§7) instead of committing directly, but that PR is a plain, unreviewed
   pull request the moment it's opened — nothing here enforces branch

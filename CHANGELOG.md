@@ -9,6 +9,52 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.4.0] - 2026-08-04
+
+### Added
+- **Figma Variable write-back (Phase 2).** A GitHub-side resolution for a
+  token that was originally read *from* a Figma Variable now writes back
+  to that same Variable (`variable.setValueForMode`) instead of always
+  degrading to a Paint/Effect Style. Needed a new `design-sync.modeId`
+  field alongside the existing `design-sync.variableId` in
+  `$extensions` (from `design-sync-schema` v1.1.0) — a variable with more
+  than one mode has one value per mode, so the id alone doesn't say which
+  mode's value to update.
+- Applies to `color` (COLOR variables) and, for the first time, real
+  writes for `dimension`/`string`/`boolean` (FLOAT/STRING/BOOLEAN
+  variables) — previously, resolving a conflict in GitHub's favor for a
+  variable-backed dimension/string/boolean token silently did nothing:
+  `applyTokensToFigma` excluded any key matching a live variable from the
+  custom-tokens plugin-data write, on the assumption "it's variable-derived,
+  it'll re-read live" — true for reading, but nothing was actually
+  updating the variable's value, so the resolution was lost.
+
+### Changed
+- `applyTokensToFigma` no longer decides Style-vs-custom-blob by checking
+  "does a live Figma variable currently have this exact key name" — that
+  was a fragile proxy for "was this variable-derived," easily wrong after
+  a rename. It now reads each token's own `$extensions` instead, which is
+  the actual authoritative answer already computed at read time.
+- `resolveForFigmaApply` now resolves references uniformly across all six
+  token categories (previously only color/typography/shadow) — a
+  prerequisite for Variable write-back to have a concrete value to write,
+  and the divergent per-category handling wasn't earning its complexity
+  since Custom Tokens tab entries are effectively always already concrete.
+
+### Known limitation
+- Write-back always resolves to a concrete value, even when writing to a
+  real Variable — it does not (yet) write a native `VARIABLE_ALIAS` for a
+  token whose value is itself a reference. Figma Variables do support
+  aliasing another variable, but doing that safely requires the
+  reference's *target* to itself be a known Figma variable, which isn't
+  guaranteed (a GitHub-only reference chain has no Figma-side variable to
+  point at). A possible later refinement, not required for values to sync
+  correctly today.
+- Brand-new tokens that never existed in Figma at all still become
+  Styles, not Variables — there's no way to know which collection/mode a
+  never-before-seen token should belong to. Write-back only re-links to a
+  variable a token already has a documented history with.
+
 ## [1.3.2] - 2026-08-04
 
 ### Added

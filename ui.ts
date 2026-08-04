@@ -565,15 +565,22 @@ function buildSyncPlan(
   return { final, figmaApply };
 }
 
-// Figma Styles have no alias concept, so anything headed for
-// applyTokensToFigma's color/typography/shadow writers must already be a
-// concrete value. `figmaApply` only contains a *subset* of tokens (the
-// delta), so a reference inside it might point at a token that isn't in
-// that subset — resolve against `context` (the full merged set) instead,
-// which always has everything.
+// Neither Figma Styles nor Figma Variables understand our reference
+// structure — a Style write needs a concrete value outright, and while a
+// Variable write-back *could* in principle write a native VARIABLE_ALIAS
+// for a reference, doing that safely requires the reference's target to
+// itself be a known Figma variable, which isn't guaranteed (e.g. a
+// GitHub-only chain). Resolving to a concrete value uniformly, for every
+// category, keeps applyTokensToFigma's write paths simple and consistent
+// (Phase 2 write-back: real Variable-alias write-back is a possible later
+// refinement, not required for tokens to sync correctly today).
+// `figmaApply` only contains a *subset* of tokens (the delta), so a
+// reference inside it might point at a token that isn't in that subset —
+// resolve against `context` (the full merged set) instead, which always
+// has everything.
 function resolveForFigmaApply(figmaApply: TokenSet, context: TokenSet): TokenSet {
   const resolved = emptyTokenSet();
-  for (const category of ['color', 'typography', 'shadow'] as TokenCategory[]) {
+  for (const category of TOKEN_CATEGORIES) {
     const bucket = figmaApply[category] as Record<string, DesignToken<unknown>>;
     const target = resolved[category] as Record<string, DesignToken<unknown>>;
     for (const [key, token] of Object.entries(bucket)) {
@@ -591,12 +598,6 @@ function resolveForFigmaApply(figmaApply: TokenSet, context: TokenSet): TokenSet
       }
     }
   }
-  // Dimension/string/boolean have no Figma-native alias concept either, but
-  // they're stored as our own JSON blob in plugin data, so a reference
-  // structure round-trips there just fine without resolving.
-  resolved.dimension = figmaApply.dimension;
-  resolved.string = figmaApply.string;
-  resolved.boolean = figmaApply.boolean;
   return resolved;
 }
 

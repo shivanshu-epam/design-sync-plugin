@@ -41,11 +41,18 @@ below. If the alias target isn't in Figma's currently-active variable list
 (an orphaned reference), it falls back to a resolved concrete snapshot
 instead of blocking the read.
 
-**Current asymmetry**: variables are only read *from* Figma (Figma → GitHub
-→ Storybook). Pulling a GitHub-only addition back into Figma (the
-"Sync" tab's GitHub→Figma direction) still creates/updates a Paint or
-Effect *style*, not an actual variable — writing real Figma Variables back
-(with collections/modes) isn't implemented yet.
+**Variable write-back (Phase 2).** A GitHub-side resolution for a token
+that was originally read *from* a Figma Variable (carries
+`design-sync.variableId` + `design-sync.modeId` in `$extensions`) writes
+back to that same variable's mode via `variable.setValueForMode()`,
+instead of degrading to a Style. This only re-links a token to a variable
+it already has documented history with — a brand-new token that never
+existed in Figma at all still becomes a Style, since there's no way to
+know which collection/mode a never-before-seen token should belong to.
+Write-back also always resolves to a concrete value, even for a Variable —
+it doesn't yet write a native `VARIABLE_ALIAS` for a token that's itself a
+reference, since the reference's target isn't guaranteed to be a known
+Figma variable (e.g. a GitHub-only reference chain).
 
 ## Token model
 
@@ -292,8 +299,12 @@ allowed to reach, per `manifest.json`'s `networkAccess.allowedDomains`).
   merge hits GitHub's normal merge-conflict handling, same as any other
   two branches touching the same file. Nothing here coordinates or warns
   ahead of time.
-- **No Figma Variable write-back.** GitHub-only tokens pulled into Figma
-  become Styles, never real Variables with collections/modes.
+- **Figma Variable write-back only re-links known variables, never
+  creates new ones.** A token with no prior Figma variable history
+  (brand-new from GitHub) still becomes a Style — there's no collection/
+  mode to put a genuinely new variable in. Write-back also always writes
+  a concrete value, never a native `VARIABLE_ALIAS`, even for a token
+  that's itself a reference.
 - **PAT has no rotation or central management** — sits in per-user
   `figma.clientStorage` indefinitely.
 - **`devAllowedDomains` (`http://localhost:6006`) only applies when the
