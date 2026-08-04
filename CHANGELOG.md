@@ -9,6 +9,29 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.9.0] - 2026-08-04
+
+### Changed
+- **Breaking: a sync that only updates Figma (GitHub already had the
+  value) now opens a PR too, instead of being skipped entirely.** Found
+  via a real case: editing `design-tokens.json` directly on GitHub, then
+  running Sync in the plugin — Figma updated correctly, but no
+  audit-log entry was written and no Teams/Slack notification fired,
+  because both only trigger from inside the PR-opening branch of
+  `runSync`, which was gated purely on `githubContentChanged`. A token
+  resolved as "Use GitHub" whose value is already on GitHub makes
+  `githubContentChanged` false (nothing to commit) even though Figma
+  genuinely needs the write — that whole sync was invisible to History
+  and notifications as a result. The gate is now `githubChanged ||
+  hasAnyEntries(figmaApply)`: GitHub's file is only committed when it
+  actually needs to change, but the PR — carrying at minimum the
+  audit-log entry — opens whenever *either* side did real work. The true
+  no-op case (nothing resolved, nothing to do) still skips the PR
+  entirely, unchanged from v1.4.3.
+- `sync-logic.ts` gained `hasAnyEntries()`, with 3 new tests (28 total)
+  including one that reproduces the exact "Use GitHub resolution, GitHub
+  already matches" scenario that exposed this gap.
+
 ## [1.8.2] - 2026-08-04
 
 ### Fixed

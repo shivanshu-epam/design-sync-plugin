@@ -320,3 +320,13 @@ export function invertAuditChanges(changes: AuditChange[]): AuditChange[] {
     resolution: null,
   }));
 }
+
+// True if figmaApply (or any TokenSet-shaped delta) has at least one entry
+// in any category. Used to decide whether a sync actually wrote anything
+// back to Figma — a real GitHub-authored edit pulled into Figma (GitHub
+// already had the new value, so githubContentChanged is false) still
+// counts as a sync worth recording, even though nothing needed to change
+// on GitHub's side.
+export function hasAnyEntries(tokens: TokenSet): boolean {
+  return TOKEN_CATEGORIES.some((category) => Object.keys(tokens[category]).length > 0);
+}

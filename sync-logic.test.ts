@@ -8,6 +8,7 @@ import {
   diffRowPriority,
   diffTokenSets,
   githubContentChanged,
+  hasAnyEntries,
   invertAuditChanges,
   preferLiveFigmaExtensions,
   resolveForFigmaApply,
@@ -294,4 +295,31 @@ test('invertAuditChanges: swaps previous/new value and clears resolution', () =>
   assert.equal(valueOf(inverse[0].previousValue as DesignToken<unknown>), '#222222');
   assert.equal(valueOf(inverse[0].newValue as DesignToken<unknown>), '#111111');
   assert.equal(inverse[0].resolution, null);
+});
+
+// ---------------------------------------------------------------------------
+// hasAnyEntries
+// ---------------------------------------------------------------------------
+
+test('hasAnyEntries: false for a completely empty TokenSet', () => {
+  assert.equal(hasAnyEntries(emptyTokenSet()), false);
+});
+
+test('hasAnyEntries: true when any single category has an entry', () => {
+  assert.equal(hasAnyEntries(setWithColors({ a: colorToken('#111111') })), true);
+});
+
+test('hasAnyEntries: reflects the real "GitHub already matched, only Figma needs updating" case', () => {
+  // A token edited directly on GitHub, resolved as "Use GitHub" (the only
+  // way it reaches figmaApply): buildSyncPlan sets final to GitHub's own
+  // value, which already equals what's on GitHub — githubContentChanged is
+  // false (nothing to commit) — but figmaApply still has the entry, since
+  // Figma genuinely needs it. hasAnyEntries(figmaApply) must be true so
+  // this sync still gets recorded, even though nothing needs to change on
+  // GitHub's side.
+  const figma = setWithColors({ a: colorToken('#111111') });
+  const github = setWithColors({ a: colorToken('#222222') });
+  const { final, figmaApply } = buildSyncPlan(figma, github, { 'color:a': 'github' });
+  assert.equal(githubContentChanged(final, github), false);
+  assert.equal(hasAnyEntries(figmaApply), true);
 });

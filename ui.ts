@@ -24,6 +24,7 @@ import {
   diffRowPriority,
   diffTokenSets,
   githubContentChanged,
+  hasAnyEntries,
   invertAuditChanges,
   isReferenceToken,
   preferLiveFigmaExtensions,
@@ -1727,14 +1728,22 @@ async function runSync() {
     // actually needs to change — e.g. every conflict got resolved as
     // "keep GitHub's value", or the only "conflicts" were reference
     // cascades (see cascadeOnly on DiffEntry) that were never going to
-    // touch GitHub's file at all. If nothing differs, opening a branch + PR
-    // would just be empty noise — a real case hit while testing the
-    // cascade-only fix above, where the only "changes" were cascades and
-    // the resulting PR had a 0-line diff.
+    // touch GitHub's file at all.
     const githubChanged = githubContentChanged(final, state.githubTokens);
+    // ...but a sync can still be doing real work even when GitHub doesn't
+    // need a commit — e.g. a token edited directly on GitHub, resolved as
+    // "Use GitHub": GitHub already has the new value (githubChanged is
+    // false), yet Figma still needs it written. Gating the PR purely on
+    // githubChanged (the pre-1.6.1 behavior) made that whole sync invisible
+    // to the audit log and Teams/Slack notifications, since both only fire
+    // from inside this branch — a real case a user hit. Only skip the PR
+    // entirely when NEITHER side has anything to do (the true no-op case
+    // v1.4.3 was actually built for).
+    const figmaChanged = hasAnyEntries(figmaApply);
+    const somethingToRecord = githubChanged || figmaChanged;
 
     let pr: { number: number; url: string } | null = null;
-    if (githubChanged) {
+    if (somethingToRecord) {
       // Sync opens a PR against settings.branch instead of committing to it
       // directly — nothing lands on the branch Storybook/downstream builds
       // consume without a review step (Phase 3). The base branch's SHA is
@@ -1747,23 +1756,26 @@ async function runSync() {
       const baseSha = await getBranchHeadSha(settings, settings.branch);
       await createBranch(settings, branch, baseSha);
 
-      appendLog('Committing merged tokens to the new branch…');
-      await commitGithubTokens(settings, final, state.githubSha, branch);
+      if (githubChanged) {
+        appendLog('Committing merged tokens to the new branch…');
+        await commitGithubTokens(settings, final, state.githubSha, branch);
+      } else {
+        appendLog(`GitHub's ${settings.path} already matches — nothing to commit there, only recording this sync's effect on Figma.`);
+      }
 
       const changedCount = state.diff.filter((d) => d.status !== 'unchanged' && !(state.resolutions[`${d.category}:${d.key}`] === 'skip')).length;
       appendLog('Opening pull request…');
+      const prBody = githubChanged
+        ? `Opened by the Design Sync Figma plugin. ${changedCount} token(s) resolved.\n\nMerging this brings \`${settings.path}\` in line with the current Figma file.`
+        : `Opened by the Design Sync Figma plugin. ${changedCount} token(s) resolved, and GitHub already matched every one of them — no change to \`${settings.path}\` in this PR. It exists to record this sync in ${AUDIT_LOG_PATH} (see the plugin's History tab) and trigger any configured Teams/Slack notification.`;
       try {
-        pr = await createPullRequest(
-          settings,
-          branch,
-          'Design Sync: update design tokens',
-          `Opened by the Design Sync Figma plugin. ${changedCount} token(s) resolved.\n\nMerging this brings \`${settings.path}\` in line with the current Figma file.`,
-        );
+        pr = await createPullRequest(settings, branch, 'Design Sync: update design tokens', prBody);
       } catch (err) {
-        // The branch + commit above already succeeded — leaving it behind
-        // would just accumulate dead `design-sync/sync-*` branches every
-        // time this fails (e.g. a PAT missing Pull requests: write). Clean
-        // it up so a retry starts fresh instead of leaving orphans.
+        // The branch (+ commit, if githubChanged) above already succeeded —
+        // leaving it behind would just accumulate dead `design-sync/sync-*`
+        // branches every time this fails (e.g. a PAT missing Pull requests:
+        // write). Clean it up so a retry starts fresh instead of leaving
+        // orphans.
         appendLog(`Opening pull request failed — deleting branch ${branch}…`);
         await deleteBranch(settings, branch).catch(() => {});
         throw err;
@@ -1780,8 +1792,12 @@ async function runSync() {
       postToPlugin({ type: 'save-history', entry: historyEntry });
       state.pendingPr = { number: pr.number, url: pr.url, state: 'open' };
 
-      // Audit trail (Phase 5): record what this sync actually changed on
-      // GitHub. Committed to the same branch as the tokens themselves, so
+      // Audit trail (Phase 5): record what this sync actually changed —
+      // computeAuditChanges only reflects GitHub-side content changes, so
+      // in the Figma-only case (githubChanged false) this can legitimately
+      // be an empty array; the PR/branch still exists so History and
+      // notifications know the sync happened, even with no per-token diff
+      // to show. Committed to the same branch as the tokens themselves, so
       // it's part of the same PR the reviewer sees — best-effort: a failed
       // audit-log write shouldn't fail a sync whose real work (the PR) has
       // already succeeded, so it's logged as a warning, not thrown.
@@ -1794,7 +1810,7 @@ async function runSync() {
         appendLog(`Warning: recording the audit entry failed (${err instanceof Error ? err.message : String(err)}) — the sync itself still succeeded.`);
       }
     } else {
-      appendLog('No GitHub changes needed — merged result already matches GitHub. Skipping branch/PR.');
+      appendLog('No changes needed — nothing to sync.');
     }
 
     state.resolutions = {};
