@@ -237,3 +237,86 @@ export function githubContentChanged(final: TokenSet, githubTokens: TokenSet): b
     return false;
   });
 }
+
+// ---------------------------------------------------------------------------
+// Audit trail (Phase 5)
+// ---------------------------------------------------------------------------
+
+export type AuditChangeType = 'added' | 'modified' | 'removed';
+
+export interface AuditChange {
+  key: string;
+  category: TokenCategory;
+  changeType: AuditChangeType;
+  previousValue?: unknown; // omitted for 'added' (nothing existed on GitHub before)
+  newValue?: unknown; // omitted for 'removed'
+  // null when no explicit resolution was recorded for this key — e.g. a
+  // new-on-GitHub row included by its opt-out-default rather than an
+  // explicit click (see the "Include in sync" checkbox in ui.ts).
+  resolution: Resolution | null;
+}
+
+export interface AuditEntry {
+  timestamp: string; // ISO
+  actor: string; // GitHub username, resolved via GET /user at sync time
+  prNumber: number;
+  prUrl: string;
+  branch: string; // the head branch the PR was opened from
+  changes: AuditChange[];
+}
+
+// The audit trail's source of truth for "what did this sync actually
+// change on GitHub" — deliberately the exact same key-by-key comparison
+// githubContentChanged uses (byte-equal final vs. current GitHub content),
+// just collecting the before/after values instead of a boolean, so the two
+// can never disagree about which keys changed.
+export function computeAuditChanges(
+  final: TokenSet,
+  githubTokens: TokenSet,
+  resolutions: Record<string, Resolution>,
+): AuditChange[] {
+  const changes: AuditChange[] = [];
+  for (const category of TOKEN_CATEGORIES) {
+    const finalCat = final[category] as Record<string, unknown>;
+    const gCat = githubTokens[category] as Record<string, unknown>;
+    const keys = new Set([...Object.keys(finalCat), ...Object.keys(gCat)]);
+    for (const key of keys) {
+      const finalVal = finalCat[key];
+      const gVal = gCat[key];
+      if (JSON.stringify(finalVal) === JSON.stringify(gVal)) continue;
+      const changeType: AuditChangeType = gVal === undefined ? 'added' : finalVal === undefined ? 'removed' : 'modified';
+      changes.push({
+        key,
+        category,
+        changeType,
+        ...(gVal !== undefined ? { previousValue: gVal } : {}),
+        ...(finalVal !== undefined ? { newValue: finalVal } : {}),
+        resolution: resolutions[`${category}:${key}`] ?? null,
+      });
+    }
+  }
+  return changes;
+}
+
+// Revert is scoped to entries made ENTIRELY of 'modified' changes. An
+// 'added' change has no well-defined inverse under the current merge model
+// — buildSyncPlan has no "delete this key from GitHub" resolution (see
+// PROJECT.md §11) — so reverting an addition isn't attempted here rather
+// than silently reverting only part of a sync and leaving the rest.
+export function canRevertEntry(entry: AuditEntry): boolean {
+  return entry.changes.length > 0 && entry.changes.every((c) => c.changeType === 'modified');
+}
+
+// The inverse of an entry's changes — previousValue/newValue swapped — used
+// to build the revert commit. Only meaningful for entries canRevertEntry
+// already approved; callers are expected to check that first.
+export function invertAuditChanges(changes: AuditChange[]): AuditChange[] {
+  return changes.map((c) => ({
+    key: c.key,
+    category: c.category,
+    changeType: 'modified',
+    previousValue: c.newValue,
+    newValue: c.previousValue,
+    resolution: null,
+  }));
+}

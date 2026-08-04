@@ -187,6 +187,9 @@
   .diff-values > div { flex: 1; overflow-wrap: anywhere; }
   .resolution-controls label { margin-right: 10px; font-weight: 400; }
   .cascade-note { color: var(--text-muted); font-size: 10.5px; font-style: italic; margin: 0; }
+  .audit-change-row { display: flex; gap: 10px; font-family: ui-monospace, monospace; font-size: 10px; color: var(--text-muted); padding: 2px 0; }
+  .audit-change-key { flex: 1; overflow-wrap: anywhere; font-weight: 600; }
+  .audit-change-values { flex: 1; overflow-wrap: anywhere; }
   .empty-state { color: var(--text-muted); text-align: center; padding: 24px 0; }
   pre#log {
     background: var(--bg-subtle);
@@ -238,6 +241,7 @@
       <button class="tab-btn" data-tab="tokens">Custom Tokens</button>
       <button class="tab-btn" data-tab="sync">Sync</button>
       <button class="tab-btn" data-tab="status">Status</button>
+      <button class="tab-btn" data-tab="history">History</button>
     </nav>
   </header>
   <main id="panel"></main>

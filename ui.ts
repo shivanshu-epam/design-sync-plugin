@@ -16,12 +16,15 @@ import type {
   UIToPluginMessage,
 } from './shared/tokens';
 import { emptyTokenSet, normalizeLegacyBucket, TOKEN_CATEGORIES, validateTokenSet } from './shared/tokens';
-import type { DiffEntry, Resolution } from './sync-logic';
+import type { AuditChange, AuditEntry, DiffEntry, Resolution } from './sync-logic';
 import {
   buildSyncPlan,
+  canRevertEntry,
+  computeAuditChanges,
   diffRowPriority,
   diffTokenSets,
   githubContentChanged,
+  invertAuditChanges,
   isReferenceToken,
   preferLiveFigmaExtensions,
   resolveForFigmaApply,
@@ -115,7 +118,7 @@ window.onmessage = (event: MessageEvent) => {
 // State
 // ---------------------------------------------------------------------------
 
-type Tab = 'connect' | 'tokens' | 'sync' | 'status';
+type Tab = 'connect' | 'tokens' | 'sync' | 'status' | 'history';
 type StorybookStatus = 'unknown' | 'in-sync' | 'stale' | 'never-built' | 'error';
 
 interface SourcedValidationError extends TokenValidationError {
@@ -149,6 +152,13 @@ const state: {
   availableRepos: RepoOption[];
   loadingRepos: boolean;
   reposError: string | null;
+  auditLog: AuditEntry[];
+  auditLogLoading: boolean;
+  auditLogError: string | null;
+  // Timestamp (AuditEntry.timestamp) of the entry currently being reverted,
+  // or null — a string id rather than a boolean since only one revert can
+  // run at a time but the UI needs to know WHICH row's button to disable.
+  reverting: string | null;
 } = {
   activeTab: 'connect',
   settings: null,
@@ -176,6 +186,10 @@ const state: {
   availableRepos: [],
   loadingRepos: false,
   reposError: null,
+  auditLog: [],
+  auditLogLoading: false,
+  auditLogError: null,
+  reverting: null,
 };
 
 function appendLog(line: string) {
@@ -351,6 +365,78 @@ async function fetchStorybookMarker(settings: GithubSettings): Promise<Storybook
   }
   const body = await res.json();
   return JSON.parse(decodeBase64Utf8(body.content)) as StorybookSyncMarker;
+}
+
+// ---------------------------------------------------------------------------
+// Audit trail (Phase 5) — .design-sync/audit-log.jsonl in the tokens repo,
+// one JSON line per sync event. Committed to the tokens repo (not
+// figma.clientStorage) because it's inherently team-shared, same reasoning
+// as design-tokens.json itself.
+// ---------------------------------------------------------------------------
+
+const AUDIT_LOG_PATH = '.design-sync/audit-log.jsonl';
+
+// Best-effort — a failed username lookup shouldn't block a sync. 'unknown'
+// is a valid, honest value for an audit entry rather than a reason to fail.
+async function fetchGithubUsername(settings: GithubSettings): Promise<string> {
+  try {
+    const res = await githubRequest('/user', settings);
+    if (!res.ok) return 'unknown';
+    const body = await res.json();
+    return typeof body.login === 'string' ? body.login : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+async function fetchAuditLogRaw(settings: GithubSettings, ref: string): Promise<{ text: string; sha: string | null }> {
+  const url = `/repos/${settings.owner}/${settings.repo}/contents/${AUDIT_LOG_PATH}?ref=${encodeURIComponent(ref)}`;
+  const metaRes = await githubRequest(url, settings);
+  if (metaRes.status === 404) return { text: '', sha: null };
+  if (!metaRes.ok) {
+    const body = await metaRes.json().catch(() => ({}));
+    throw new Error(`Reading audit log failed: ${metaRes.status} ${body.message ?? metaRes.statusText}`);
+  }
+  const meta = await metaRes.json();
+  const sha = meta.sha as string;
+  // Same 1MB-inline-content concern as design-tokens.json itself — this log
+  // only ever grows, so it will eventually cross that threshold too.
+  const rawRes = await githubRequest(url, settings, { headers: { Accept: 'application/vnd.github.raw+json' } });
+  if (!rawRes.ok) throw new Error(`Reading audit log contents failed: ${rawRes.status} ${rawRes.statusText}`);
+  return { text: await rawRes.text(), sha };
+}
+
+function parseAuditLog(text: string): AuditEntry[] {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as AuditEntry)
+    .reverse(); // newest first
+}
+
+// Appends without parsing the existing lines — a malformed old line (hand
+// edited, or from a future plugin version with a different shape) must
+// never block appending a new one; this file's job is to always accept a
+// new line, not to validate history it didn't write.
+async function appendAuditLogEntry(settings: GithubSettings, branch: string, entry: AuditEntry): Promise<void> {
+  const { text, sha } = await fetchAuditLogRaw(settings, branch);
+  const withTrailingNewline = text.length > 0 && !text.endsWith('\n') ? `${text}\n` : text;
+  const payload: Record<string, unknown> = {
+    message: `Design Sync: record audit entry for PR #${entry.prNumber}`,
+    content: encodeBase64Utf8(`${withTrailingNewline}${JSON.stringify(entry)}\n`),
+    branch,
+  };
+  if (sha) payload.sha = sha;
+  const res = await githubRequest(`/repos/${settings.owner}/${settings.repo}/contents/${AUDIT_LOG_PATH}`, settings, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(`Recording audit entry failed: ${res.status} ${body.message ?? res.statusText}`);
+  }
 }
 
 async function commitGithubTokens(
@@ -562,6 +648,7 @@ function render() {
   if (state.activeTab === 'tokens') root.appendChild(renderTokensTab());
   if (state.activeTab === 'sync') root.appendChild(renderSyncTab());
   if (state.activeTab === 'status') root.appendChild(renderStatusTab());
+  if (state.activeTab === 'history') root.appendChild(renderHistoryTab());
 }
 
 function renderConnectTab(): HTMLElement {
@@ -1573,6 +1660,20 @@ async function runSync() {
       state.history.unshift(historyEntry);
       postToPlugin({ type: 'save-history', entry: historyEntry });
       state.pendingPr = { number: pr.number, url: pr.url, state: 'open' };
+
+      // Audit trail (Phase 5): record what this sync actually changed on
+      // GitHub. Committed to the same branch as the tokens themselves, so
+      // it's part of the same PR the reviewer sees — best-effort: a failed
+      // audit-log write shouldn't fail a sync whose real work (the PR) has
+      // already succeeded, so it's logged as a warning, not thrown.
+      const changes: AuditChange[] = computeAuditChanges(final, state.githubTokens, state.resolutions);
+      try {
+        const actor = await fetchGithubUsername(settings);
+        const auditEntry: AuditEntry = { timestamp: historyEntry.timestamp, actor, prNumber: pr.number, prUrl: pr.url, branch, changes };
+        await appendAuditLogEntry(settings, branch, auditEntry);
+      } catch (err) {
+        appendLog(`Warning: recording the audit entry failed (${err instanceof Error ? err.message : String(err)}) — the sync itself still succeeded.`);
+      }
     } else {
       appendLog('No GitHub changes needed — merged result already matches GitHub. Skipping branch/PR.');
     }
@@ -1624,6 +1725,192 @@ async function runSync() {
     state.syncing = false;
     render();
   }
+}
+
+// ---------------------------------------------------------------------------
+// History tab (Phase 5)
+// ---------------------------------------------------------------------------
+
+// Reads from settings.branch (the base branch) rather than any in-flight
+// sync branch — the History tab shows what's actually merged, matching
+// what a team member checking history from a different machine would see.
+async function loadAuditLog() {
+  if (!state.settings) return;
+  state.auditLogLoading = true;
+  state.auditLogError = null;
+  render();
+  try {
+    const { text } = await fetchAuditLogRaw(state.settings, state.settings.branch);
+    state.auditLog = parseAuditLog(text);
+  } catch (err) {
+    state.auditLogError = err instanceof Error ? err.message : String(err);
+  } finally {
+    state.auditLogLoading = false;
+    render();
+  }
+}
+
+async function runRevert(entry: AuditEntry) {
+  if (!state.settings || !canRevertEntry(entry)) return;
+  const settings = state.settings;
+  state.reverting = entry.timestamp;
+  state.syncError = null;
+  render();
+  try {
+    appendLog(`Reverting sync from ${new Date(entry.timestamp).toLocaleString()} (PR #${entry.prNumber})…`);
+
+    // Re-read GitHub's CURRENT content fresh rather than trusting whatever
+    // is already in state — the History tab can be opened without a prior
+    // Sync tab compare this session, and reverting against a stale base
+    // risks clobbering a later sync this session doesn't know about.
+    const { tokens: currentGithubTokens, sha: currentSha } = await fetchGithubTokens(settings);
+
+    const inverse = invertAuditChanges(entry.changes);
+    const reverted: TokenSet = emptyTokenSet();
+    for (const category of TOKEN_CATEGORIES) reverted[category] = { ...currentGithubTokens[category] } as never;
+    const revertApply: TokenSet = emptyTokenSet();
+    for (const change of inverse) {
+      (reverted[change.category] as Record<string, unknown>)[change.key] = change.newValue;
+      (revertApply[change.category] as Record<string, unknown>)[change.key] = change.newValue;
+    }
+
+    const branch = syncBranchName();
+    appendLog(`Creating branch ${branch}…`);
+    const baseSha = await getBranchHeadSha(settings, settings.branch);
+    await createBranch(settings, branch, baseSha);
+
+    appendLog('Committing reverted tokens to the new branch…');
+    await commitGithubTokens(settings, reverted, currentSha, branch);
+
+    let pr: { number: number; url: string };
+    try {
+      pr = await createPullRequest(
+        settings,
+        branch,
+        `Design Sync: revert sync from ${new Date(entry.timestamp).toLocaleString()}`,
+        `Reverts ${entry.changes.length} token(s) changed by PR #${entry.prNumber} back to their previous values.\n\nOpened by the Design Sync Figma plugin's History tab.`,
+      );
+    } catch (err) {
+      appendLog(`Opening revert pull request failed — deleting branch ${branch}…`);
+      await deleteBranch(settings, branch).catch(() => {});
+      throw err;
+    }
+    appendLog(`Opened revert PR #${pr.number}.`);
+
+    const revertTimestamp = new Date().toISOString();
+    const historyEntry: SyncHistoryEntry = { timestamp: revertTimestamp, prNumber: pr.number, prUrl: pr.url, branch };
+    state.history.unshift(historyEntry);
+    postToPlugin({ type: 'save-history', entry: historyEntry });
+    state.pendingPr = { number: pr.number, url: pr.url, state: 'open' };
+
+    // A revert is itself a new, auditable sync event — not a special
+    // git-level operation that bypasses the log.
+    try {
+      const actor = await fetchGithubUsername(settings);
+      const auditEntry: AuditEntry = { timestamp: revertTimestamp, actor, prNumber: pr.number, prUrl: pr.url, branch, changes: inverse };
+      await appendAuditLogEntry(settings, branch, auditEntry);
+    } catch (err) {
+      appendLog(`Warning: recording the revert's audit entry failed (${err instanceof Error ? err.message : String(err)}) — the revert PR itself still succeeded.`);
+    }
+
+    // Figma is a local design file — apply immediately, same reasoning as
+    // a normal sync (see runSync above).
+    appendLog('Applying reverted values to Figma…');
+    preferLiveFigmaExtensions(revertApply, state.figmaTokens);
+    const resolvedApply = resolveForFigmaApply(revertApply, reverted);
+    const result = await applyTokensToFigma(resolvedApply);
+    if (!result.success) {
+      appendLog(
+        `Warning: applying reverted values to Figma failed (${result.error ?? 'unknown error'}) — the revert PR was still opened; merging it and syncing again will pick it up.`,
+      );
+    } else {
+      for (const line of result.diagnostics ?? []) appendLog(`  ${line}`);
+      appendLog('Figma updated with reverted values.');
+    }
+
+    appendLog('Revert complete — pull request pending review.');
+    await loadAuditLog();
+  } catch (err) {
+    state.syncError = err instanceof Error ? err.message : String(err);
+    appendLog(`Error: ${state.syncError}`);
+  } finally {
+    state.reverting = null;
+    render();
+  }
+}
+
+function renderAuditChangeRow(c: AuditChange): HTMLElement {
+  const format = (v: unknown) => (v === undefined ? '—' : typeof v === 'string' ? v : JSON.stringify(v));
+  return el('div', { className: 'audit-change-row' }, [
+    el('span', { className: 'audit-change-key' }, [`${c.category}/${c.key}`]),
+    el('span', { className: 'audit-change-values' }, [`${format(c.previousValue)} → ${format(c.newValue)}`]),
+  ]);
+}
+
+function renderHistoryTab(): HTMLElement {
+  const container = el('div');
+
+  if (!isConfigured(state.settings)) {
+    container.appendChild(el('div', { className: 'empty-state' }, ['Set up your GitHub repository in the Connect tab first.']));
+    return container;
+  }
+
+  const loadBtn = el('button', { className: 'primary', textContent: state.auditLogLoading ? 'Loading…' : 'Load history' });
+  if (state.auditLogLoading) loadBtn.setAttribute('disabled', 'true');
+  loadBtn.onclick = () => loadAuditLog();
+  container.appendChild(el('div', { className: 'btn-row' }, [loadBtn]));
+
+  if (state.auditLogError) {
+    container.appendChild(el('div', { className: 'status-banner error' }, [state.auditLogError]));
+    const guide = renderPermissionErrorGuide(state.auditLogError);
+    if (guide) container.appendChild(guide);
+  }
+  if (state.syncError) {
+    container.appendChild(el('div', { className: 'status-banner error' }, [state.syncError]));
+  }
+
+  if (state.auditLog.length === 0) {
+    container.appendChild(
+      el('div', { className: 'empty-state' }, [
+        state.auditLogLoading ? 'Loading history…' : 'Click "Load history" to see past syncs from this repo\'s configured branch.',
+      ]),
+    );
+    return container;
+  }
+
+  for (const entry of state.auditLog) {
+    const canRevert = canRevertEntry(entry);
+    const reverting = state.reverting === entry.timestamp;
+    const item = el('div', { className: 'diff-row' });
+    item.appendChild(
+      el('div', { className: 'diff-key' }, [
+        `${new Date(entry.timestamp).toLocaleString()} — ${entry.actor}`,
+        el('span', { className: 'diff-badge' }, [`${entry.changes.length} change${entry.changes.length === 1 ? '' : 's'}`]),
+      ]),
+    );
+    const prLink = el('a', { href: entry.prUrl, target: '_blank', textContent: `PR #${entry.prNumber}` });
+    item.appendChild(el('p', { className: 'hint' }, [prLink]));
+
+    const details = el('div', { className: 'diff-values' });
+    for (const c of entry.changes) details.appendChild(renderAuditChangeRow(c));
+    item.appendChild(details);
+
+    const controls = el('div', { className: 'resolution-controls' });
+    const revertBtn = el('button', {
+      textContent: reverting ? 'Reverting…' : 'Revert this sync',
+      title: canRevert
+        ? 'Opens a new pull request restoring every token in this entry to its previous value.'
+        : "This sync added new tokens — revert isn't supported for additions yet. Remove them directly in GitHub if needed.",
+    });
+    if (!canRevert || reverting || state.reverting) revertBtn.setAttribute('disabled', 'true');
+    revertBtn.onclick = () => runRevert(entry);
+    controls.appendChild(revertBtn);
+    item.appendChild(controls);
+
+    container.appendChild(item);
+  }
+
+  return container;
 }
 
 // ---------------------------------------------------------------------------

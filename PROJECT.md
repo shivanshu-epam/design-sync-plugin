@@ -451,12 +451,22 @@ gets rebuilt or extended later.
   `localhost:6006` fetch) is a dev-only manifest key by Figma's design. If
   this plugin is ever published, that check silently stops working for
   installed users.
-- **No CI on this plugin repo or the tokens repo checks logic beyond
-  build/typecheck/validate** — no tests for `ui.ts`/`code.ts`, or for the
-  tokens repo's own scripts. Only the extracted `design-sync-schema`
-  package has unit test coverage.
-- **No audit trail or rollback** beyond the last-5-pull-requests list on
-  the Connect tab and GitHub's own PR/commit history.
+- **CI on this plugin repo checks build/typecheck/lint plus `npm test`**
+  (v1.5.0) — but only for the pure diff/merge logic extracted into
+  `sync-logic.ts` (`buildSyncPlan`, `diffTokenSets`, the audit-log
+  helpers, etc.). `ui.ts`'s DOM rendering and `code.ts`'s Figma-sandbox
+  code remain untested — genuinely testing those would need a Figma
+  runtime or a browser, which is out of scope for `node --test`. The
+  tokens repo's own scripts are also untested beyond `validate-tokens.mjs`
+  running in CI.
+- **Audit trail + rollback (Phase 5)** shipped in v1.6.0 — a History tab
+  showing every sync's actual per-token before/after values (not just a
+  PR link, replacing the old last-5-PRs list), with a "Revert this sync"
+  action for entries made entirely of modified tokens. Reverting a token
+  that was newly *added* by a sync isn't supported — there's no "delete
+  this key" resolution in the merge model, so an entry containing any
+  addition disables Revert with an explanation rather than partially
+  reverting.
 - **PAT has no rotation or central management** — sits in per-user
   `figma.clientStorage` indefinitely.
 - **Multi-file / multi-brand support, audit database, Slack

@@ -9,6 +9,44 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.6.0] - 2026-08-04
+
+### Added
+- **History tab (Phase 5 — audit trail + rollback).** Every sync that
+  actually changes something on GitHub now appends one line to
+  `.design-sync/audit-log.jsonl` in the tokens repo: timestamp, actor
+  (`GET /user` with the configured PAT), the PR it was part of, and the
+  exact per-token before/after values — reusing `buildSyncPlan`'s own
+  merged result rather than recomputing a second diff, so the audit log
+  can't disagree with what the Sync tab showed. Committed to the same
+  branch as the token change itself, so it's part of the same PR a
+  reviewer already sees. The previous "last 5 PRs" list in the Connect
+  tab only ever showed a PR link — this shows what actually changed,
+  without opening GitHub.
+- **"Revert this sync"** on any History entry made entirely of `modified`
+  changes: opens a new PR restoring every affected token to its previous
+  value, and — like a normal sync — applies immediately to Figma. A
+  revert is recorded as its own new audit entry rather than a special
+  git-level operation, so rollbacks show up in history too. Scoped
+  deliberately to `modified`-only entries: an `added` token has no
+  well-defined inverse under the current merge model (there's no "delete
+  this key from GitHub" resolution — see `PROJECT.md` §11), so an entry
+  containing any addition shows a disabled Revert button with an
+  explanation rather than silently reverting only part of a sync.
+- `sync-logic.ts` gained `computeAuditChanges`, `canRevertEntry`, and
+  `invertAuditChanges` — pure functions, 8 new tests in
+  `sync-logic.test.ts` (25 total), following the same test-first pattern
+  as 1.5.0.
+
+### Deviation from the original roadmap spec
+`design-sync-roadmap-phases-1-11.md`'s Phase 5 assumed Phase 3 still had
+an optional direct-commit mode, and specified appending the audit entry
+at PR-merge time via CI (since a direct commit has no merge event to hook
+into). This plugin's Sync is PR-only (see 1.2.0's "Breaking" note) — so
+the audit entry is appended directly to the sync branch as part of the
+same flow that opens the PR, no CI hook needed. Simpler than the spec,
+not a reduction in scope.
+
 ## [1.5.0] - 2026-08-04
 
 ### Added

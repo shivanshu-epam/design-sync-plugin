@@ -3,11 +3,15 @@ import assert from 'node:assert/strict';
 import { emptyTokenSet, type DesignToken, type TokenSet } from './shared/tokens';
 import {
   buildSyncPlan,
+  canRevertEntry,
+  computeAuditChanges,
   diffRowPriority,
   diffTokenSets,
   githubContentChanged,
+  invertAuditChanges,
   preferLiveFigmaExtensions,
   resolveForFigmaApply,
+  type AuditEntry,
 } from './sync-logic';
 
 function colorToken(value: string, extensions?: DesignToken<string>['$extensions']): DesignToken<string> {
@@ -215,4 +219,79 @@ test('diffRowPriority: real conflicts sort before added rows, which sort before 
   const rows = [cascade, added, conflict];
   const sorted = [...rows].sort((a, b) => diffRowPriority(a as never) - diffRowPriority(b as never));
   assert.deepEqual(sorted, [conflict, added, cascade]);
+});
+
+// ---------------------------------------------------------------------------
+// computeAuditChanges / canRevertEntry / invertAuditChanges
+// ---------------------------------------------------------------------------
+
+test('computeAuditChanges: records a modified key with before/after values and its resolution', () => {
+  const github = setWithColors({ a: colorToken('#111111') });
+  const final = setWithColors({ a: colorToken('#222222') });
+  const changes = computeAuditChanges(final, github, { 'color:a': 'github' });
+  assert.equal(changes.length, 1);
+  assert.equal(changes[0].changeType, 'modified');
+  assert.equal(changes[0].previousValue && valueOf(changes[0].previousValue as DesignToken<unknown>), '#111111');
+  assert.equal(changes[0].newValue && valueOf(changes[0].newValue as DesignToken<unknown>), '#222222');
+  assert.equal(changes[0].resolution, 'github');
+});
+
+test('computeAuditChanges: a key with no actual difference produces no entry (mirrors githubContentChanged)', () => {
+  const github = setWithColors({ a: colorToken('#111111') });
+  const final = setWithColors({ a: colorToken('#111111') });
+  assert.deepEqual(computeAuditChanges(final, github, {}), []);
+});
+
+test('computeAuditChanges: a key added on GitHub-only side is classified "added" with no previousValue', () => {
+  const github = setWithColors({});
+  const final = setWithColors({ a: colorToken('#111111') });
+  const changes = computeAuditChanges(final, github, {});
+  assert.equal(changes.length, 1);
+  assert.equal(changes[0].changeType, 'added');
+  assert.equal(changes[0].previousValue, undefined);
+});
+
+test('computeAuditChanges: cascade-only cases (see 1.4.2) never appear — buildSyncPlan never changes them', () => {
+  // A reference whose target changed elsewhere never differs from GitHub's
+  // raw stored value at the key itself, so buildSyncPlan's final matches
+  // GitHub exactly for that key — computeAuditChanges must agree, or the
+  // audit trail would record phantom changes for rows the Sync tab already
+  // shows as "nothing to decide."
+  const figma = setWithColors({ 'yellow-5': colorToken('#fffff5'), 'badge-bg': refToken('color/yellow-5') });
+  const github = setWithColors({ 'yellow-5': colorToken('#fffff5'), 'badge-bg': refToken('color/yellow-5') });
+  const { final } = buildSyncPlan(figma, github, {});
+  assert.deepEqual(computeAuditChanges(final, github, {}), []);
+});
+
+function makeEntry(changes: ReturnType<typeof computeAuditChanges>): AuditEntry {
+  return { timestamp: '2026-08-04T00:00:00.000Z', actor: 'tester', prNumber: 1, prUrl: 'https://example.com/pr/1', branch: 'design-sync/x', changes };
+}
+
+test('canRevertEntry: true when every change is "modified"', () => {
+  const github = setWithColors({ a: colorToken('#111111') });
+  const final = setWithColors({ a: colorToken('#222222') });
+  const entry = makeEntry(computeAuditChanges(final, github, {}));
+  assert.equal(canRevertEntry(entry), true);
+});
+
+test('canRevertEntry: false when any change is "added" (no well-defined inverse today)', () => {
+  const github = setWithColors({});
+  const final = setWithColors({ a: colorToken('#111111') });
+  const entry = makeEntry(computeAuditChanges(final, github, {}));
+  assert.equal(canRevertEntry(entry), false);
+});
+
+test('canRevertEntry: false for an entry with zero changes', () => {
+  assert.equal(canRevertEntry(makeEntry([])), false);
+});
+
+test('invertAuditChanges: swaps previous/new value and clears resolution', () => {
+  const github = setWithColors({ a: colorToken('#111111') });
+  const final = setWithColors({ a: colorToken('#222222') });
+  const changes = computeAuditChanges(final, github, { 'color:a': 'github' });
+  const inverse = invertAuditChanges(changes);
+  assert.equal(inverse[0].changeType, 'modified');
+  assert.equal(valueOf(inverse[0].previousValue as DesignToken<unknown>), '#222222');
+  assert.equal(valueOf(inverse[0].newValue as DesignToken<unknown>), '#111111');
+  assert.equal(inverse[0].resolution, null);
 });
