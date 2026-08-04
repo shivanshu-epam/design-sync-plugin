@@ -9,6 +9,19 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.4.3] - 2026-08-04
+
+### Fixed
+- **Sync opened an empty pull request when nothing actually needed to
+  change on GitHub.** Found immediately after the 1.4.2 fix: with only
+  reference-cascade rows resolved (which never had anything to commit —
+  see 1.4.2), Sync still created a branch, committed, and opened a PR
+  with a 0-line diff. `runSync` now compares the fully-merged result
+  against GitHub's currently-stored content, category by category, key
+  by key, before touching the branch/commit/PR path at all — if nothing
+  differs, it skips straight to applying changes to Figma (if any) and
+  logs "No GitHub changes needed" instead of opening a no-op PR.
+
 ## [1.4.2] - 2026-08-04
 
 ### Changed

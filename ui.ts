@@ -1708,53 +1708,76 @@ async function runSync() {
     // dimension/string/boolean token on every sync, changed or not.
     preferLiveFigmaExtensions(figmaApply, state.figmaTokens);
 
-    // Sync opens a PR against settings.branch instead of committing to it
-    // directly — nothing lands on the branch Storybook/downstream builds
-    // consume without a review step (Phase 3). The base branch's SHA is
-    // untouched by any of this, so state.githubSha stays valid; a 409 on
-    // retry (the original reason for eagerly updating it after a direct
-    // commit) can't happen here, since we're never writing to the tip of
-    // settings.branch.
-    const branch = syncBranchName();
-    appendLog(`Creating branch ${branch}…`);
-    const baseSha = await getBranchHeadSha(settings, settings.branch);
-    await createBranch(settings, branch, baseSha);
+    // A resolved conflict doesn't always mean GitHub's stored content
+    // actually needs to change — e.g. every conflict got resolved as
+    // "keep GitHub's value", or the only "conflicts" were reference
+    // cascades (see cascadeOnly on DiffEntry) that were never going to
+    // touch GitHub's file at all. Compare the fully-merged result against
+    // what's currently stored, category by category, key by key: if
+    // nothing differs, opening a branch + PR would just be empty noise —
+    // a real case hit while testing the cascade-only fix above, where the
+    // only "changes" were cascades and the resulting PR had a 0-line diff.
+    const githubChanged = TOKEN_CATEGORIES.some((category) => {
+      const finalCat = final[category] as Record<string, unknown>;
+      const gCat = state.githubTokens[category] as Record<string, unknown>;
+      const keys = new Set([...Object.keys(finalCat), ...Object.keys(gCat)]);
+      for (const key of keys) {
+        if (JSON.stringify(finalCat[key]) !== JSON.stringify(gCat[key])) return true;
+      }
+      return false;
+    });
 
-    appendLog('Committing merged tokens to the new branch…');
-    await commitGithubTokens(settings, final, state.githubSha, branch);
+    let pr: { number: number; url: string } | null = null;
+    if (githubChanged) {
+      // Sync opens a PR against settings.branch instead of committing to it
+      // directly — nothing lands on the branch Storybook/downstream builds
+      // consume without a review step (Phase 3). The base branch's SHA is
+      // untouched by any of this, so state.githubSha stays valid; a 409 on
+      // retry (the original reason for eagerly updating it after a direct
+      // commit) can't happen here, since we're never writing to the tip of
+      // settings.branch.
+      const branch = syncBranchName();
+      appendLog(`Creating branch ${branch}…`);
+      const baseSha = await getBranchHeadSha(settings, settings.branch);
+      await createBranch(settings, branch, baseSha);
 
-    const changedCount = state.diff.filter((d) => d.status !== 'unchanged' && !(state.resolutions[`${d.category}:${d.key}`] === 'skip')).length;
-    appendLog('Opening pull request…');
-    let pr: { number: number; url: string };
-    try {
-      pr = await createPullRequest(
-        settings,
+      appendLog('Committing merged tokens to the new branch…');
+      await commitGithubTokens(settings, final, state.githubSha, branch);
+
+      const changedCount = state.diff.filter((d) => d.status !== 'unchanged' && !(state.resolutions[`${d.category}:${d.key}`] === 'skip')).length;
+      appendLog('Opening pull request…');
+      try {
+        pr = await createPullRequest(
+          settings,
+          branch,
+          'Design Sync: update design tokens',
+          `Opened by the Design Sync Figma plugin. ${changedCount} token(s) resolved.\n\nMerging this brings \`${settings.path}\` in line with the current Figma file.`,
+        );
+      } catch (err) {
+        // The branch + commit above already succeeded — leaving it behind
+        // would just accumulate dead `design-sync/sync-*` branches every
+        // time this fails (e.g. a PAT missing Pull requests: write). Clean
+        // it up so a retry starts fresh instead of leaving orphans.
+        appendLog(`Opening pull request failed — deleting branch ${branch}…`);
+        await deleteBranch(settings, branch).catch(() => {});
+        throw err;
+      }
+      appendLog(`Opened PR #${pr.number}.`);
+
+      const historyEntry: SyncHistoryEntry = {
+        timestamp: new Date().toISOString(),
+        prNumber: pr.number,
+        prUrl: pr.url,
         branch,
-        'Design Sync: update design tokens',
-        `Opened by the Design Sync Figma plugin. ${changedCount} token(s) resolved.\n\nMerging this brings \`${settings.path}\` in line with the current Figma file.`,
-      );
-    } catch (err) {
-      // The branch + commit above already succeeded — leaving it behind
-      // would just accumulate dead `design-sync/sync-*` branches every
-      // time this fails (e.g. a PAT missing Pull requests: write). Clean
-      // it up so a retry starts fresh instead of leaving orphans.
-      appendLog(`Opening pull request failed — deleting branch ${branch}…`);
-      await deleteBranch(settings, branch).catch(() => {});
-      throw err;
+      };
+      state.history.unshift(historyEntry);
+      postToPlugin({ type: 'save-history', entry: historyEntry });
+      state.pendingPr = { number: pr.number, url: pr.url, state: 'open' };
+    } else {
+      appendLog('No GitHub changes needed — merged result already matches GitHub. Skipping branch/PR.');
     }
-    appendLog(`Opened PR #${pr.number}.`);
 
     state.resolutions = {};
-
-    const historyEntry: SyncHistoryEntry = {
-      timestamp: new Date().toISOString(),
-      prNumber: pr.number,
-      prUrl: pr.url,
-      branch,
-    };
-    state.history.unshift(historyEntry);
-    postToPlugin({ type: 'save-history', entry: historyEntry });
-    state.pendingPr = { number: pr.number, url: pr.url, state: 'open' };
 
     // Figma is a local design file, not the shared repo the review gate
     // protects — applying the merged resolution here immediately (ahead
@@ -1765,8 +1788,9 @@ async function runSync() {
     const resolvedApply = resolveForFigmaApply(figmaApply, final);
     const result = await applyTokensToFigma(resolvedApply);
     if (!result.success) {
+      const prContext = pr ? `Pull request #${pr.number} was opened, but applying` : 'Applying';
       throw new Error(
-        `Pull request #${pr.number} was opened, but applying changes back to Figma failed: ${
+        `${prContext} changes back to Figma failed: ${
           result.error ?? 'unknown error'
         }. This usually means you only have view access to this Figma file.`,
       );
@@ -1777,7 +1801,7 @@ async function runSync() {
     // since applyTokensToFigma's write-back attempt is otherwise invisible.
     for (const line of result.diagnostics ?? []) appendLog(`  ${line}`);
     appendLog('Figma styles updated.');
-    appendLog('Sync complete — pull request pending review.');
+    appendLog(pr ? 'Sync complete — pull request pending review.' : 'Sync complete.');
   } catch (err) {
     state.syncError = err instanceof Error ? err.message : String(err);
     appendLog(`Error: ${state.syncError}`);
