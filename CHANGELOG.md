@@ -9,6 +9,19 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.8.2] - 2026-08-04
+
+### Fixed
+- **History tab showed raw token JSON instead of the resolved value.**
+  Found while making Teams/Slack notifications more descriptive (see
+  `notify-on-sync.mjs`'s matching fix in the tokens repo): `AuditChange.
+  previousValue`/`newValue` store the full `DesignToken` object
+  (`{$type, $value: {kind, value|refKey}, $extensions}`), not a bare
+  scalar, so `renderAuditChangeRow` was JSON-stringifying the whole
+  token — e.g. `{"$type":"color","$value":{"kind":"value","value":
+  "#fffff5"}}...` instead of just `#fffff5`. `formatAuditValue()` now
+  extracts the resolved value (or `→ refKey` for a reference).
+
 ## [1.8.1] - 2026-08-04
 
 ### Fixed

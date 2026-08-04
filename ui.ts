@@ -1959,11 +1959,27 @@ async function runRevert(entry: AuditEntry) {
   }
 }
 
+// AuditChange.previousValue/newValue store the FULL DesignToken object
+// ({$type, $value: {kind, value|refKey}, $extensions}) as written by
+// computeAuditChanges — not a bare scalar. Extract just the resolved value
+// (or "→ refKey" for a reference) instead of dumping the whole token as
+// JSON, which is unreadable in a change list. Found and fixed the same bug
+// in notify-on-sync.mjs's resolvedValueOf() at the same time.
+function formatAuditValue(v: unknown): string {
+  if (v === undefined) return '—';
+  const token = v as DesignToken<unknown> | undefined;
+  if (token && typeof token === 'object' && token.$value) {
+    if (token.$value.kind === 'reference') return `→ ${token.$value.refKey}`;
+    const val = token.$value.value;
+    return typeof val === 'string' ? val : JSON.stringify(val);
+  }
+  return typeof v === 'string' ? v : JSON.stringify(v);
+}
+
 function renderAuditChangeRow(c: AuditChange): HTMLElement {
-  const format = (v: unknown) => (v === undefined ? '—' : typeof v === 'string' ? v : JSON.stringify(v));
   return el('div', { className: 'audit-change-row' }, [
     el('div', { className: 'audit-change-key' }, [`${c.category}/${c.key}`]),
-    el('div', { className: 'audit-change-values' }, [`${format(c.previousValue)} → ${format(c.newValue)}`]),
+    el('div', { className: 'audit-change-values' }, [`${formatAuditValue(c.previousValue)} → ${formatAuditValue(c.newValue)}`]),
   ]);
 }
 
