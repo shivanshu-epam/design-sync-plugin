@@ -1665,13 +1665,14 @@ async function runSync() {
   render();
   try {
     const { final, figmaApply } = buildSyncPlan(state.figmaTokens, state.githubTokens, state.resolutions);
-    // Dimension/string/boolean tokens have no per-key native style — the
-    // whole set lives in one plugin-data blob, so it must always be
-    // replaced in full rather than patched with just the delta like
-    // color/typography/shadow are.
-    figmaApply.dimension = final.dimension;
-    figmaApply.string = final.string;
-    figmaApply.boolean = final.boolean;
+    // Phase 2: dimension/string/boolean tokens backed by a Figma Variable
+    // now get a real per-key write (setValueForMode), same as color — so,
+    // like color/typography/shadow, figmaApply's delta-only subset from
+    // buildSyncPlan is exactly what should be applied. Overwriting it with
+    // the full merged set here (the pre-Phase-2 behavior, back when these
+    // categories only ever wrote a single plugin-data blob that had to be
+    // replaced wholesale) would re-write every variable-backed
+    // dimension/string/boolean token on every sync, changed or not.
     preferLiveFigmaExtensions(figmaApply, state.figmaTokens);
 
     // Sync opens a PR against settings.branch instead of committing to it

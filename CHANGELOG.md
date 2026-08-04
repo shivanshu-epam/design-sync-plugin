@@ -9,6 +9,37 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.4.1] - 2026-08-04
+
+### Fixed
+- **`runSync` overwrote the delta-only `figmaApply` for dimension/string/
+  boolean with the *entire* merged token set, on every sync.** Left over
+  from before Phase 2 (1.4.0), when those categories only ever wrote one
+  plugin-data blob that had to be replaced wholesale — `buildSyncPlan`
+  already produces a correct delta-only subset for every category, so
+  this was pure leftover code, not something a variable-backed category
+  needed. Confirmed directly from a user's Sync log: a sync with 7 actual
+  changes produced ~2,700 unrelated `dimension/...`/`string/...`
+  diagnostic lines, each a real `setValueForMode` write to a Figma
+  Variable that hadn't changed. Removed the override; `figmaApply` now
+  stays delta-only for every category, same as color.
+- **`hexToRgba` silently mis-parsed malformed hex into a wrong-but-valid-
+  looking color instead of erroring.** Found via a real case: a source
+  token stored as `"#fffff"` (5 digits, one short) sliced into `ffff0f`
+  — `clean.slice(4, 6)` on a 5-char string returns 1 character, so the
+  missing digit shifted into the blue channel rather than raising an
+  error. A successful-looking write-back with the wrong color is worse
+  than a failed one, since nothing in the Sync log distinguished it from
+  a correct write. `hexToRgba` now validates the string is exactly 6 or
+  8 hex digits and throws otherwise; that throw is caught alongside
+  `setValueForMode`'s own failures in `applyVariableValue` (previously
+  the conversion happened outside the try/catch, so a bad value would
+  have crashed the whole batch instead of producing one diagnostic
+  line), and the Style-fallback paths (`applyColorToken`,
+  `applyTypographyToken`, `applyShadowToken`) are now individually
+  guarded too, so one malformed token fails and logs instead of aborting
+  every other token in the sync.
+
 ## [1.4.0] - 2026-08-04
 
 ### Added

@@ -69,6 +69,15 @@ function rgbaToHex({ r, g, b, a }: { r: number; g: number; b: number; a?: number
 
 function hexToRgba(hex: string): { r: number; g: number; b: number; a: number } {
   const clean = hex.replace('#', '');
+  // A truncated/malformed hex string (e.g. "#fffff" — 5 digits) used to slice
+  // silently: clean.slice(4, 6) on a 5-char string returns just 1 char, so a
+  // single missing digit produced a plausible-looking WRONG color instead of
+  // an error — a real case found via a corrupted design-tokens.json entry
+  // that silently became ffff0f instead of the intended ffffff. Validate the
+  // shape up front so malformed hex surfaces as a diagnostic, not a color.
+  if (!/^[0-9a-fA-F]{6}$/.test(clean) && !/^[0-9a-fA-F]{8}$/.test(clean)) {
+    throw new Error(`"${hex}" isn't a valid 6- or 8-digit hex color`);
+  }
   const bytes =
     clean.length === 8
       ? [clean.slice(0, 2), clean.slice(2, 4), clean.slice(4, 6), clean.slice(6, 8)]
@@ -440,31 +449,31 @@ async function applyVariableValue(variableId: string, modeId: string, category: 
   const variable = await figma.variables.getVariableByIdAsync(variableId);
   if (!variable) return { ok: false, reason: `variable ${variableId} not found (deleted, or belongs to a library this file doesn't have loaded)` };
 
-  let converted: VariableValue;
-  if (category === 'color' && variable.resolvedType === 'COLOR' && typeof value === 'string') {
-    converted = hexToRgba(value);
-  } else if (category === 'dimension' && variable.resolvedType === 'FLOAT' && typeof value === 'string') {
-    const n = parseFloat(value);
-    if (Number.isNaN(n)) return { ok: false, reason: `"${value}" isn't a valid number for a FLOAT variable` };
-    converted = n;
-  } else if (category === 'string' && variable.resolvedType === 'STRING' && typeof value === 'string') {
-    converted = value;
-  } else if (category === 'boolean' && variable.resolvedType === 'BOOLEAN' && typeof value === 'boolean') {
-    converted = value;
-  } else {
-    return { ok: false, reason: `category "${category}" doesn't match the variable's current type (${variable.resolvedType}), or the value's own type is wrong` };
-  }
-
   try {
+    let converted: VariableValue;
+    if (category === 'color' && variable.resolvedType === 'COLOR' && typeof value === 'string') {
+      converted = hexToRgba(value);
+    } else if (category === 'dimension' && variable.resolvedType === 'FLOAT' && typeof value === 'string') {
+      const n = parseFloat(value);
+      if (Number.isNaN(n)) return { ok: false, reason: `"${value}" isn't a valid number for a FLOAT variable` };
+      converted = n;
+    } else if (category === 'string' && variable.resolvedType === 'STRING' && typeof value === 'string') {
+      converted = value;
+    } else if (category === 'boolean' && variable.resolvedType === 'BOOLEAN' && typeof value === 'boolean') {
+      converted = value;
+    } else {
+      return { ok: false, reason: `category "${category}" doesn't match the variable's current type (${variable.resolvedType}), or the value's own type is wrong` };
+    }
     variable.setValueForMode(modeId, converted);
     return { ok: true };
   } catch (err) {
-    // Figma throws here for several distinct reasons worth telling apart:
-    // the mode was removed from the collection since this token was read,
-    // OR — the most likely real-world cause — the variable belongs to a
-    // published library and isn't locally editable; only variables local
-    // to this exact file can be written by a plugin.
-    return { ok: false, reason: `setValueForMode threw: ${err instanceof Error ? err.message : String(err)}` };
+    // Catches both a malformed value (e.g. hexToRgba rejecting a truncated
+    // hex string) and setValueForMode itself throwing — the latter usually
+    // means the mode was removed from the collection since this token was
+    // read, or the variable belongs to a published library and isn't
+    // locally editable (only variables local to this exact file can be
+    // written by a plugin).
+    return { ok: false, reason: err instanceof Error ? err.message : String(err) };
   }
 }
 
@@ -518,18 +527,32 @@ async function applyTokensToFigma(tokens: TokenSet): Promise<{ diagnostics: stri
       }
       diagnostics.push(`color/${name}: variable write failed (${result.reason}) — falling back to Style`);
     }
-    await applyColorToken(name, token.$value.value, paintByName.get(name));
+    try {
+      await applyColorToken(name, token.$value.value, paintByName.get(name));
+    } catch (err) {
+      // A malformed value (e.g. corrupted hex in the source data) shouldn't
+      // abort every other token in the sync — record it and move on.
+      diagnostics.push(`color/${name}: failed to write Style (${err instanceof Error ? err.message : String(err)})`);
+    }
   }
   for (const [name, token] of Object.entries(tokens.typography)) {
     if (token.$value.kind !== 'value') continue;
     // No Figma Variable type maps to a full typography value (font family,
     // size, line-height, letter-spacing together) — always a Style.
-    await applyTypographyToken(name, token.$value.value, textByName.get(name));
+    try {
+      await applyTypographyToken(name, token.$value.value, textByName.get(name));
+    } catch (err) {
+      diagnostics.push(`typography/${name}: failed to write Style (${err instanceof Error ? err.message : String(err)})`);
+    }
   }
   for (const [name, token] of Object.entries(tokens.shadow)) {
     if (token.$value.kind !== 'value') continue;
     // Same — no Figma Variable type represents a multi-layer shadow.
-    await applyShadowToken(name, token.$value.value, effectByName.get(name));
+    try {
+      await applyShadowToken(name, token.$value.value, effectByName.get(name));
+    } catch (err) {
+      diagnostics.push(`shadow/${name}: failed to write Style (${err instanceof Error ? err.message : String(err)})`);
+    }
   }
 
   // Dimension/string/boolean have no native Figma style type at all — a
