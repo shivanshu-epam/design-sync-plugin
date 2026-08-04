@@ -61,4 +61,10 @@ export type PluginToUIMessage =
   | { type: 'init'; settings: GithubSettings | null; history: SyncHistoryEntry[] }
   | { type: 'figma-tokens'; tokens: TokenSet }
   | { type: 'figma-tokens-error'; error: string }
-  | { type: 'apply-tokens-result'; success: boolean; error?: string };
+  // diagnostics: one line per color/dimension/string/boolean token processed,
+  // recording whether it wrote back to a Figma Variable or fell back to a
+  // Style/plugin-data blob, and why — without this, a silent variable-write
+  // failure (wrong extensions, deleted variable, a remote/library variable
+  // Figma won't let a plugin edit, etc.) is indistinguishable from "nothing
+  // needed to change" purely by looking at the result in Figma.
+  | { type: 'apply-tokens-result'; success: boolean; error?: string; diagnostics?: string[] };

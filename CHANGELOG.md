@@ -57,6 +57,17 @@ build time).
   over whichever side's value was chosen, since variable identity is a
   fact about Figma's current state, not something that should travel
   with the winning value.
+- **Variable write-back failures were silent even after the fix above** —
+  `applyVariableValue`'s `catch` block swallowed the real reason
+  (`variable.setValueForMode` can throw for several distinct causes: the
+  mode was removed from the collection, or — the likely real-world one —
+  the variable belongs to a published library, and a plugin can only
+  write variables local to the current file). Added a `diagnostics: string[]`
+  field to the `apply-tokens-result` message: one line per color/dimension/
+  string/boolean token processed, stating whether it wrote the Variable or
+  fell back, and why, appended to the Sync tab's log. Without this there
+  was no way to tell "nothing needed to change" apart from "the write was
+  attempted and rejected" purely by looking at the result in Figma.
 
 ### Known limitation
 - Write-back always resolves to a concrete value, even when writing to a

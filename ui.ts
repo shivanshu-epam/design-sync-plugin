@@ -31,7 +31,7 @@ function isConfigured(settings: GithubSettings | null): settings is GithubSettin
 
 let figmaTokensResolver: ((tokens: TokenSet) => void) | null = null;
 let figmaTokensRejecter: ((err: Error) => void) | null = null;
-let applyResultResolver: ((result: { success: boolean; error?: string }) => void) | null = null;
+let applyResultResolver: ((result: { success: boolean; error?: string; diagnostics?: string[] }) => void) | null = null;
 
 function requestFigmaTokens(): Promise<TokenSet> {
   return new Promise((resolve, reject) => {
@@ -41,7 +41,7 @@ function requestFigmaTokens(): Promise<TokenSet> {
   });
 }
 
-function applyTokensToFigma(tokens: TokenSet): Promise<{ success: boolean; error?: string }> {
+function applyTokensToFigma(tokens: TokenSet): Promise<{ success: boolean; error?: string; diagnostics?: string[] }> {
   return new Promise((resolve) => {
     applyResultResolver = resolve;
     postToPlugin({ type: 'apply-tokens', tokens });
@@ -1737,6 +1737,11 @@ async function runSync() {
         }. This usually means you only have view access to this Figma file.`,
       );
     }
+    // Per-token detail on whether each color/dimension/string/boolean token
+    // wrote back to a real Figma Variable or fell back to a Style/plugin
+    // data blob, and why — the only way to actually see that from the UI,
+    // since applyTokensToFigma's write-back attempt is otherwise invisible.
+    for (const line of result.diagnostics ?? []) appendLog(`  ${line}`);
     appendLog('Figma styles updated.');
     appendLog('Sync complete — pull request pending review.');
   } catch (err) {

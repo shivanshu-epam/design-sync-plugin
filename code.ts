@@ -434,34 +434,41 @@ async function applyShadowToken(name: string, value: ShadowLayer[], existing: Ef
 // dead reference to a since-deleted variable shouldn't lose the token's
 // value entirely, just fall back to the same path a token with no Figma
 // variable history at all would take.
-async function applyVariableValue(variableId: string, modeId: string, category: TokenCategory, value: unknown): Promise<boolean> {
+type VariableWriteResult = { ok: true } | { ok: false; reason: string };
+
+async function applyVariableValue(variableId: string, modeId: string, category: TokenCategory, value: unknown): Promise<VariableWriteResult> {
   const variable = await figma.variables.getVariableByIdAsync(variableId);
-  if (!variable) return false;
+  if (!variable) return { ok: false, reason: `variable ${variableId} not found (deleted, or belongs to a library this file doesn't have loaded)` };
 
   let converted: VariableValue;
   if (category === 'color' && variable.resolvedType === 'COLOR' && typeof value === 'string') {
     converted = hexToRgba(value);
   } else if (category === 'dimension' && variable.resolvedType === 'FLOAT' && typeof value === 'string') {
     const n = parseFloat(value);
-    if (Number.isNaN(n)) return false;
+    if (Number.isNaN(n)) return { ok: false, reason: `"${value}" isn't a valid number for a FLOAT variable` };
     converted = n;
   } else if (category === 'string' && variable.resolvedType === 'STRING' && typeof value === 'string') {
     converted = value;
   } else if (category === 'boolean' && variable.resolvedType === 'BOOLEAN' && typeof value === 'boolean') {
     converted = value;
   } else {
-    return false; // type mismatch — the variable's own type changed since this token was read
+    return { ok: false, reason: `category "${category}" doesn't match the variable's current type (${variable.resolvedType}), or the value's own type is wrong` };
   }
 
   try {
     variable.setValueForMode(modeId, converted);
-    return true;
-  } catch {
-    return false; // e.g. the mode itself was removed from the collection since this token was read
+    return { ok: true };
+  } catch (err) {
+    // Figma throws here for several distinct reasons worth telling apart:
+    // the mode was removed from the collection since this token was read,
+    // OR — the most likely real-world cause — the variable belongs to a
+    // published library and isn't locally editable; only variables local
+    // to this exact file can be written by a plugin.
+    return { ok: false, reason: `setValueForMode threw: ${err instanceof Error ? err.message : String(err)}` };
   }
 }
 
-async function applyTokensToFigma(tokens: TokenSet): Promise<void> {
+async function applyTokensToFigma(tokens: TokenSet): Promise<{ diagnostics: string[] }> {
   const [paintStyles, textStyles, effectStyles] = await Promise.all([
     figma.getLocalPaintStylesAsync(),
     figma.getLocalTextStylesAsync(),
@@ -470,6 +477,14 @@ async function applyTokensToFigma(tokens: TokenSet): Promise<void> {
   const paintByName = new Map(paintStyles.map((s) => [s.name, s]));
   const textByName = new Map(textStyles.map((s) => [s.name, s]));
   const effectByName = new Map(effectStyles.map((s) => [s.name, s]));
+
+  // One line per color/dimension/string/boolean token processed, recording
+  // whether it wrote back to a Figma Variable or fell back to a Style/
+  // plugin-data blob, and why. Surfaced to the UI log — without this, a
+  // silent variable-write failure (missing extensions, deleted variable, a
+  // remote/library variable Figma won't let a plugin edit, etc.) is
+  // indistinguishable from "nothing needed to change."
+  const diagnostics: string[] = [];
 
   // Styles/Variables have no alias concept, so every value here must
   // already be concrete ({ kind: 'value' }) by the time it reaches
@@ -493,8 +508,17 @@ async function applyTokensToFigma(tokens: TokenSet): Promise<void> {
   for (const [name, token] of Object.entries(tokens.color)) {
     if (token.$value.kind !== 'value') continue;
     const ext = variableExtensions(token);
-    const wroteVariable = ext && (await applyVariableValue(ext.variableId, ext.modeId, 'color', token.$value.value));
-    if (!wroteVariable) await applyColorToken(name, token.$value.value, paintByName.get(name));
+    if (!ext) {
+      diagnostics.push(`color/${name}: no variable extensions — writing Style`);
+    } else {
+      const result = await applyVariableValue(ext.variableId, ext.modeId, 'color', token.$value.value);
+      if (result.ok) {
+        diagnostics.push(`color/${name}: wrote variable ${ext.variableId} mode ${ext.modeId}`);
+        continue;
+      }
+      diagnostics.push(`color/${name}: variable write failed (${result.reason}) — falling back to Style`);
+    }
+    await applyColorToken(name, token.$value.value, paintByName.get(name));
   }
   for (const [name, token] of Object.entries(tokens.typography)) {
     if (token.$value.kind !== 'value') continue;
@@ -520,12 +544,22 @@ async function applyTokensToFigma(tokens: TokenSet): Promise<void> {
   const custom: CustomTokens = emptyCustomTokens();
   for (const category of ['dimension', 'string', 'boolean'] as const) {
     const bucket = tokens[category] as Record<string, DesignToken<unknown>>;
-    const customBucket = custom[category];
+    const customBucket = custom[category] as Record<string, DesignToken<unknown>>;
     for (const [key, token] of Object.entries(bucket)) {
       if (token.$value.kind !== 'value') continue;
       const ext = variableExtensions(token);
-      const wroteVariable = ext && (await applyVariableValue(ext.variableId, ext.modeId, category, token.$value.value));
-      if (!wroteVariable) (customBucket as Record<string, DesignToken<unknown>>)[key] = token;
+      if (!ext) {
+        diagnostics.push(`${category}/${key}: no variable extensions — writing to custom-tokens plugin data`);
+        customBucket[key] = token;
+        continue;
+      }
+      const result = await applyVariableValue(ext.variableId, ext.modeId, category, token.$value.value);
+      if (result.ok) {
+        diagnostics.push(`${category}/${key}: wrote variable ${ext.variableId} mode ${ext.modeId}`);
+      } else {
+        diagnostics.push(`${category}/${key}: variable write failed (${result.reason}) — falling back to custom-tokens plugin data`);
+        customBucket[key] = token;
+      }
     }
   }
   const serialized = JSON.stringify(custom);
@@ -537,6 +571,7 @@ async function applyTokensToFigma(tokens: TokenSet): Promise<void> {
     );
   }
   figma.root.setSharedPluginData(PLUGIN_DATA_NAMESPACE, CUSTOM_TOKENS_KEY, serialized);
+  return { diagnostics };
 }
 
 async function loadSettings(): Promise<GithubSettings | null> {
@@ -589,8 +624,8 @@ figma.ui.onmessage = async (msg: UIToPluginMessage) => {
 
     case 'apply-tokens': {
       try {
-        await applyTokensToFigma(msg.tokens);
-        figma.ui.postMessage({ type: 'apply-tokens-result', success: true });
+        const { diagnostics } = await applyTokensToFigma(msg.tokens);
+        figma.ui.postMessage({ type: 'apply-tokens-result', success: true, diagnostics });
       } catch (err) {
         figma.ui.postMessage({
           type: 'apply-tokens-result',
