@@ -32,6 +32,15 @@ build time).
   including one that reproduces the exact "Use GitHub resolution, GitHub
   already matches" scenario that exposed this gap.
 
+## [1.11.1] - 2026-08-04
+
+### Removed
+- **Reverted the static status page feature from 1.11.0** — not wanted.
+  Removed the Status tab link/note. The paired `design-tokens` repo
+  changes (`scripts/generate-status-page.mjs`, the `deploy-storybook.yml`
+  step) were reverted separately in that repo. Notifications (v1.8.0),
+  the other half of Phase 9, are unaffected and stay as-is.
+
 ## [1.11.0] - 2026-08-04
 
 ### Added
