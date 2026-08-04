@@ -16,17 +16,16 @@ import type {
   UIToPluginMessage,
 } from './shared/tokens';
 import { emptyTokenSet, normalizeLegacyBucket, TOKEN_CATEGORIES, validateTokenSet } from './shared/tokens';
-import type { AuditChange, AuditEntry, DiffEntry, Resolution } from './sync-logic';
+import type { AuditChange, AuditEntry, DiffEntry, Resolution, SyncExecutionPlan } from './sync-logic';
 import {
+  AUDIT_LOG_PATH,
   buildSyncPlan,
   canRevertEntry,
-  computeAuditChanges,
   diffRowPriority,
   diffTokenSets,
-  githubContentChanged,
-  hasAnyEntries,
   invertAuditChanges,
   isReferenceToken,
+  planSync,
   preferLiveFigmaExtensions,
   resolveForFigmaApply,
 } from './sync-logic';
@@ -403,7 +402,8 @@ async function fetchStorybookMarker(settings: GithubSettings): Promise<Storybook
 // as design-tokens.json itself.
 // ---------------------------------------------------------------------------
 
-const AUDIT_LOG_PATH = '.design-sync/audit-log.jsonl';
+// AUDIT_LOG_PATH is imported from sync-logic.ts — single source of truth,
+// since planSync's PR-body text also needs it.
 
 // Best-effort — a failed username lookup shouldn't block a sync. 'unknown'
 // is a valid, honest value for an audit entry rather than a reason to fail.
@@ -1762,26 +1762,25 @@ async function runSync() {
     // dimension/string/boolean token on every sync, changed or not.
     preferLiveFigmaExtensions(figmaApply, state.figmaTokens);
 
-    // A resolved conflict doesn't always mean GitHub's stored content
-    // actually needs to change — e.g. every conflict got resolved as
-    // "keep GitHub's value", or the only "conflicts" were reference
-    // cascades (see cascadeOnly on DiffEntry) that were never going to
-    // touch GitHub's file at all.
-    const githubChanged = githubContentChanged(final, state.githubTokens);
-    // ...but a sync can still be doing real work even when GitHub doesn't
-    // need a commit — e.g. a token edited directly on GitHub, resolved as
-    // "Use GitHub": GitHub already has the new value (githubChanged is
-    // false), yet Figma still needs it written. Gating the PR purely on
-    // githubChanged (the pre-1.6.1 behavior) made that whole sync invisible
-    // to the audit log and Teams/Slack notifications, since both only fire
-    // from inside this branch — a real case a user hit. Only skip the PR
-    // entirely when NEITHER side has anything to do (the true no-op case
-    // v1.4.3 was actually built for).
-    const figmaChanged = hasAnyEntries(figmaApply);
-    const somethingToRecord = githubChanged || figmaChanged;
+    // Every decision about whether to open a PR, whether to commit the
+    // tokens file, what the audit entry contains, and what the PR body
+    // says lives in planSync (sync-logic.ts) — extracted there, and
+    // covered by tests, specifically because every one of the last three
+    // production bugs (a 422 opening the PR, a sync invisible to
+    // History/notifications, "0 changes" shown for a real Figma update)
+    // was a mistake in exactly this logic when it lived inline here.
+    const plan: SyncExecutionPlan = planSync(
+      final,
+      state.figmaTokens,
+      state.githubTokens,
+      figmaApply,
+      state.resolutions,
+      state.diff,
+      settings.path,
+    );
 
     let pr: { number: number; url: string } | null = null;
-    if (somethingToRecord) {
+    if (plan.shouldOpenPr) {
       // Sync opens a PR against settings.branch instead of committing to it
       // directly — nothing lands on the branch Storybook/downstream builds
       // consume without a review step (Phase 3). The base branch's SHA is
@@ -1798,30 +1797,25 @@ async function runSync() {
       // values once the PR exists below. This ordering is deliberate, not
       // incidental: a real 422 ("No commits between main and
       // design-sync/...") was hit when the tokens file didn't need a
-      // commit (githubChanged false) and nothing else had been committed
-      // yet — GitHub refuses to open a PR from a branch with zero commits
-      // ahead of base. This entry always has genuinely new content (an
-      // appended line), so it's guaranteed to give the branch a real
-      // commit before PR creation, regardless of whether the tokens file
-      // itself changed.
+      // commit (shouldCommitTokens false) and nothing else had been
+      // committed yet — GitHub refuses to open a PR from a branch with
+      // zero commits ahead of base. This entry always has genuinely new
+      // content (an appended line), so it's guaranteed to give the branch
+      // a real commit before PR creation, regardless of whether the
+      // tokens file itself changed.
       const timestamp = new Date().toISOString();
-      const changes: AuditChange[] = computeAuditChanges(final, state.figmaTokens, state.githubTokens, state.resolutions);
       const actor = await fetchGithubUsername(settings);
       appendLog('Recording this sync…');
-      await appendAuditLogEntry(settings, branch, { timestamp, actor, prNumber: 0, prUrl: '', branch, changes });
+      await appendAuditLogEntry(settings, branch, { timestamp, actor, prNumber: 0, prUrl: '', branch, changes: plan.changes });
 
-      if (githubChanged) {
+      if (plan.shouldCommitTokens) {
         appendLog('Committing merged tokens to the new branch…');
         await commitGithubTokens(settings, final, state.githubSha, branch);
       }
 
-      const changedCount = state.diff.filter((d) => d.status !== 'unchanged' && !(state.resolutions[`${d.category}:${d.key}`] === 'skip')).length;
       appendLog('Opening pull request…');
-      const prBody = githubChanged
-        ? `Opened by the Design Sync Figma plugin. ${changedCount} token(s) resolved.\n\nMerging this brings \`${settings.path}\` in line with the current Figma file.`
-        : `Opened by the Design Sync Figma plugin. ${changedCount} token(s) resolved, and GitHub already matched every one of them — no change to \`${settings.path}\` in this PR. It exists to record this sync in ${AUDIT_LOG_PATH} (see the plugin's History tab) and trigger any configured Teams/Slack notification.`;
       try {
-        pr = await createPullRequest(settings, branch, 'Design Sync: update design tokens', prBody);
+        pr = await createPullRequest(settings, branch, 'Design Sync: update design tokens', plan.prBody);
       } catch (err) {
         // The branch (+ commits above) already succeeded — leaving it
         // behind would just accumulate dead `design-sync/sync-*` branches

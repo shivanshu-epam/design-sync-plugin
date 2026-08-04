@@ -351,3 +351,72 @@ export function invertAuditChanges(changes: AuditChange[]): AuditChange[] {
 export function hasAnyEntries(tokens: TokenSet): boolean {
   return TOKEN_CATEGORIES.some((category) => Object.keys(tokens[category]).length > 0);
 }
+
+// Single source of truth for where the audit log lives in the tokens repo
+// — used both to build API paths (ui.ts) and inside a PR body's explanatory
+// text (planSync below), which is exactly the kind of thing that drifts out
+// of sync when duplicated as separate string literals in two files.
+export const AUDIT_LOG_PATH = '.design-sync/audit-log.jsonl';
+
+export interface SyncExecutionPlan {
+  // Does design-tokens.json itself need a commit?
+  githubChanged: boolean;
+  // Does anything need to be written back to Figma?
+  figmaChanged: boolean;
+  // githubChanged || figmaChanged — the ONLY thing that should gate
+  // whether a PR opens at all. Every bug in this area so far (a 422 from
+  // an empty branch, a sync invisible to History/notifications, "0
+  // changes" shown for a real change) came from some part of runSync
+  // checking githubChanged alone instead of this. Centralizing the gate
+  // here, tested, is the whole point of this type.
+  shouldOpenPr: boolean;
+  // Alias for githubChanged, named for what the caller actually does with
+  // it (commitGithubTokens is only called when this is true) — kept as a
+  // separate field so a future change to what "should commit" means
+  // doesn't require renaming every call site that currently reads
+  // `githubChanged` to mean two different things.
+  shouldCommitTokens: boolean;
+  // Count of real, resolved diff rows — used in log/PR-body text, not a
+  // decision input.
+  changedCount: number;
+  // The audit-log entry's content for this sync — see computeAuditChanges
+  // for why this needs BOTH figmaTokens and githubTokens, not just one.
+  changes: AuditChange[];
+  prBody: string;
+}
+
+// Everything runSync needs to decide BEFORE touching the network, in one
+// place: whether to open a PR at all, whether to commit the tokens file,
+// what the audit entry should contain, and what the PR body should say.
+// Extracted specifically because every one of the last three production
+// bugs (a 422 opening the PR, a sync invisible to History/notifications,
+// "0 changes" shown for a real Figma update) was a mistake somewhere in
+// this exact decision logic, and none of it needs figma.* or fetch to
+// compute — it was only ever inline in runSync because nothing forced it
+// out.
+export function planSync(
+  final: TokenSet,
+  figmaTokens: TokenSet,
+  githubTokens: TokenSet,
+  figmaApply: TokenSet,
+  resolutions: Record<string, Resolution>,
+  diff: DiffEntry[],
+  tokensPath: string,
+): SyncExecutionPlan {
+  const githubChanged = githubContentChanged(final, githubTokens);
+  const figmaChanged = hasAnyEntries(figmaApply);
+  const changedCount = diff.filter((d) => d.status !== 'unchanged' && resolutions[`${d.category}:${d.key}`] !== 'skip').length;
+  const changes = computeAuditChanges(final, figmaTokens, githubTokens, resolutions);
+  const prBody = githubChanged
+    ? `Opened by the Design Sync Figma plugin. ${changedCount} token(s) resolved.\n\nMerging this brings \`${tokensPath}\` in line with the current Figma file.`
+    : `Opened by the Design Sync Figma plugin. ${changedCount} token(s) resolved, and GitHub already matched every one of them — no change to \`${tokensPath}\` in this PR. It exists to record this sync in ${AUDIT_LOG_PATH} (see the plugin's History tab) and trigger any configured Teams/Slack notification.`;
+  return {
+    githubChanged,
+    figmaChanged,
+    shouldOpenPr: githubChanged || figmaChanged,
+    shouldCommitTokens: githubChanged,
+    changedCount,
+    changes,
+    prBody,
+  };
+}

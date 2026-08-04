@@ -10,6 +10,7 @@ import {
   githubContentChanged,
   hasAnyEntries,
   invertAuditChanges,
+  planSync,
   preferLiveFigmaExtensions,
   resolveForFigmaApply,
   type AuditEntry,
@@ -346,4 +347,73 @@ test('hasAnyEntries: reflects the real "GitHub already matched, only Figma needs
   const { final, figmaApply } = buildSyncPlan(figma, github, { 'color:a': 'github' });
   assert.equal(githubContentChanged(final, github), false);
   assert.equal(hasAnyEntries(figmaApply), true);
+});
+
+// ---------------------------------------------------------------------------
+// planSync — the single decision point behind three real production bugs
+// (a 422 opening the PR, a sync invisible to History/notifications, "0
+// changes" shown for a real Figma update). Each scenario below reproduces
+// one of those exact cases.
+// ---------------------------------------------------------------------------
+
+test('planSync: normal case — Figma has the new value, GitHub needs a commit', () => {
+  const figma = setWithColors({ a: colorToken('#222222') });
+  const github = setWithColors({ a: colorToken('#111111') });
+  const resolutions = { 'color:a': 'figma' as const };
+  const { final, figmaApply } = buildSyncPlan(figma, github, resolutions);
+  const diff = diffTokenSets(figma, github);
+  const plan = planSync(final, figma, github, figmaApply, resolutions, diff, 'design-tokens.json');
+
+  assert.equal(plan.githubChanged, true);
+  assert.equal(plan.figmaChanged, false, 'Figma already has the value it needs — nothing to write back');
+  assert.equal(plan.shouldOpenPr, true);
+  assert.equal(plan.shouldCommitTokens, true);
+  assert.equal(plan.changedCount, 1);
+  assert.equal(plan.changes.length, 1);
+  assert.match(plan.prBody, /in line with the current Figma file/);
+});
+
+test('planSync: the exact reported case — resolved "Use GitHub" where GitHub already matches final', () => {
+  // A token edited directly on GitHub, resolved "Use GitHub": nothing
+  // needs to change on GitHub (already there), but Figma genuinely needs
+  // the write. This combination is what produced all three real bugs.
+  const figma = setWithColors({ a: colorToken('#111111') });
+  const github = setWithColors({ a: colorToken('#222222') });
+  const resolutions = { 'color:a': 'github' as const };
+  const { final, figmaApply } = buildSyncPlan(figma, github, resolutions);
+  const diff = diffTokenSets(figma, github);
+  const plan = planSync(final, figma, github, figmaApply, resolutions, diff, 'design-tokens.json');
+
+  assert.equal(plan.githubChanged, false, 'GitHub already has this value — nothing to commit');
+  assert.equal(plan.figmaChanged, true, 'Figma still needs the write');
+  assert.equal(plan.shouldOpenPr, true, 'a PR must still open — this is exactly what the 422 bug got wrong');
+  assert.equal(plan.shouldCommitTokens, false, 'committing identical content was the earlier, riskier fix — not done');
+  assert.equal(plan.changes.length, 1, 'the audit entry must show the real change — this is exactly what "0 changes" got wrong');
+  assert.equal(plan.changes[0].previousValue && valueOf(plan.changes[0].previousValue as DesignToken<unknown>), '#111111');
+  assert.equal(plan.changes[0].newValue && valueOf(plan.changes[0].newValue as DesignToken<unknown>), '#222222');
+  assert.match(plan.prBody, /already matched every one of them/);
+});
+
+test('planSync: true no-op — nothing resolved, nothing to do — does not open a PR', () => {
+  const figma = setWithColors({ a: colorToken('#111111') });
+  const github = setWithColors({ a: colorToken('#111111') });
+  const { final, figmaApply } = buildSyncPlan(figma, github, {});
+  const diff = diffTokenSets(figma, github);
+  const plan = planSync(final, figma, github, figmaApply, {}, diff, 'design-tokens.json');
+
+  assert.equal(plan.githubChanged, false);
+  assert.equal(plan.figmaChanged, false);
+  assert.equal(plan.shouldOpenPr, false);
+  assert.equal(plan.changes.length, 0);
+});
+
+test('planSync: changedCount excludes skipped rows', () => {
+  const figma = setWithColors({ a: colorToken('#222222'), b: colorToken('#333333') });
+  const github = setWithColors({ a: colorToken('#111111'), b: colorToken('#111111') });
+  const resolutions = { 'color:a': 'figma' as const, 'color:b': 'skip' as const };
+  const { final, figmaApply } = buildSyncPlan(figma, github, resolutions);
+  const diff = diffTokenSets(figma, github);
+  const plan = planSync(final, figma, github, figmaApply, resolutions, diff, 'design-tokens.json');
+
+  assert.equal(plan.changedCount, 1, 'only the resolved, non-skipped row counts');
 });

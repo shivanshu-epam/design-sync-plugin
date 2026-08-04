@@ -32,6 +32,28 @@ build time).
   including one that reproduces the exact "Use GitHub resolution, GitHub
   already matches" scenario that exposed this gap.
 
+## [1.10.0] - 2026-08-04
+
+### Changed
+- **Extracted `runSync`'s decision logic into a tested pure function,
+  `planSync` (`sync-logic.ts`).** Three real production bugs in a row —
+  a 422 opening the PR, a sync invisible to History/notifications, "0
+  changes" shown for a real Figma update — all came from mistakes in the
+  same handful of inline decisions in `runSync`: whether to open a PR,
+  whether to commit the tokens file, what the audit entry should
+  contain, what the PR body should say. None of that logic needs
+  `figma.*` or `fetch` to compute; it only ever lived inline because
+  nothing forced it out. `planSync` now owns all of it — given `final`,
+  `figmaTokens`, `githubTokens`, `figmaApply`, resolutions, the diff, and
+  the tokens path, it returns a `SyncExecutionPlan`
+  (`shouldOpenPr`/`shouldCommitTokens`/`changedCount`/`changes`/`prBody`)
+  that `runSync` just executes. 4 new tests reproduce each of the three
+  bugs directly by name (33 total), so this exact class of mistake gets
+  caught before shipping next time, not after.
+- `AUDIT_LOG_PATH` moved into `sync-logic.ts` as the single source of
+  truth — it was previously a separate string literal in `ui.ts`, and
+  `planSync`'s PR-body text needs it too.
+
 ## [1.9.2] - 2026-08-04
 
 ### Fixed
