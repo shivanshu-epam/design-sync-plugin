@@ -1356,7 +1356,11 @@ function renderNotificationsGuide(): HTMLElement {
   };
   body.appendChild(el('div', { className: 'btn-row' }, [testBtn]));
   if (state.notifyTestMessage) body.appendChild(el('p', { className: 'hint' }, [state.notifyTestMessage]));
-  if (state.notifyTestError) body.appendChild(el('div', { className: 'status-banner error' }, [state.notifyTestError]));
+  if (state.notifyTestError) {
+    body.appendChild(el('div', { className: 'status-banner error' }, [state.notifyTestError]));
+    const guide = renderPermissionErrorGuide(state.notifyTestError);
+    if (guide) body.appendChild(guide);
+  }
 
   details.appendChild(body);
   return details;

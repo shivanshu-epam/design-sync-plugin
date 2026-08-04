@@ -1,6 +1,6 @@
 {
   "name": "Figma-Github-Sync",
-  "version": "1.8.0",
+  "version": "1.8.1",
   "description": "Sync Figma styles with a design-tokens JSON file in GitHub",
   "main": "code.js",
   "scripts": {

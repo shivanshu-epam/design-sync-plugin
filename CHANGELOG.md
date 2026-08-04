@@ -9,6 +9,17 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.8.1] - 2026-08-04
+
+### Fixed
+- **"Send test notification" 403s didn't show the existing permission-fix
+  guide.** Found immediately after shipping 1.8.0 — `renderPermissionErrorGuide`
+  already exists and is wired into every other GitHub-call error banner
+  (Sync, Status, Storybook rebuild) but was missed on this new button.
+  Triggering `workflow_dispatch` needs the same `Actions: Read and write`
+  PAT permission the Storybook rebuild button needs, so the fix-it steps
+  are identical — just wasn't showing them here.
+
 ## [1.8.0] - 2026-08-04
 
 ### Added
