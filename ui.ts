@@ -947,6 +947,8 @@ function renderSyncTab(): HTMLElement {
 
   if (state.syncError) {
     container.appendChild(el('div', { className: 'status-banner error' }, [state.syncError]));
+    const guide = renderPermissionErrorGuide(state.syncError);
+    if (guide) container.appendChild(guide);
   }
   const validationBanner = renderValidationErrors();
   if (validationBanner) container.appendChild(validationBanner);
@@ -1126,6 +1128,64 @@ const DIFF_STATUS_LABEL: Record<DiffEntry['status'], string> = {
   unchanged: '',
 };
 
+// Surfaces a step-by-step fix whenever a GitHub call fails on a permission
+// error (403 "Resource not accessible by personal access token" is the
+// common one — usually Pull requests or Actions write access missing from
+// the PAT), instead of leaving the user to work out from a raw API error
+// message which of the three permissions this plugin needs is missing.
+function renderPermissionErrorGuide(error: string): HTMLElement | null {
+  if (!/403|not accessible/i.test(error)) return null;
+
+  const details = el('details', { open: true, className: 'setup-guide' });
+  details.appendChild(el('summary', {}, ['How to fix this: grant the missing permission']));
+
+  const body = el('div', {});
+  body.appendChild(
+    el('p', { className: 'hint' }, [
+      'The GitHub token in the Connect tab is missing a permission this action needs. Depending on ' +
+        'what you were doing, it\'s one of: ',
+      el('code', {}, ['Contents: Read and write']),
+      ' (reading/committing tokens), ',
+      el('code', {}, ['Pull requests: Read and write']),
+      ' (Sync opens a PR), or ',
+      el('code', {}, ['Actions: Read and write']),
+      ' ("Rebuild Storybook").',
+    ]),
+  );
+  body.appendChild(
+    el('p', { className: 'hint' }, [
+      el('strong', {}, ['Fine-grained token']), ' (starts ', el('code', {}, ['github_pat_']), '):',
+    ]),
+  );
+  body.appendChild(
+    el('pre', {}, [
+      '1. github.com/settings/personal-access-tokens\n' +
+        '2. Find this token → Edit permissions\n' +
+        '3. Under "Repository permissions", set the missing one(s) above to "Read and write"\n' +
+        '4. Save — takes effect immediately, no need to regenerate',
+    ]),
+  );
+  body.appendChild(
+    el('p', { className: 'hint' }, [
+      el('strong', {}, ['Classic token']), ' (starts ', el('code', {}, ['ghp_']), '):',
+    ]),
+  );
+  body.appendChild(
+    el('pre', {}, [
+      '1. github.com/settings/tokens\n' +
+        '2. Regenerate with the "repo" scope checked (classic tokens have no\n' +
+        '   narrower Pull requests/Actions scope — "repo" covers all three)',
+    ]),
+  );
+  body.appendChild(
+    el('p', { className: 'hint' }, [
+      'Then come back here and click the action again — nothing else needs to change.',
+    ]),
+  );
+  details.appendChild(body);
+  return details;
+}
+
 function renderStorybookGuide(): HTMLElement {
   const settings = state.settings;
   const repoName = settings?.repo ?? '<repo>';
@@ -1194,6 +1254,8 @@ function renderStatusTab(): HTMLElement {
 
   if (state.syncError) {
     container.appendChild(el('div', { className: 'status-banner error' }, [state.syncError]));
+    const guide = renderPermissionErrorGuide(state.syncError);
+    if (guide) container.appendChild(guide);
   }
   const validationBanner = renderValidationErrors();
   if (validationBanner) container.appendChild(validationBanner);

@@ -9,6 +9,15 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.2.2] - 2026-08-04
+
+### Added
+- Any 403/"not accessible" GitHub API error (Sync, Refresh status) now
+  shows an inline step-by-step guide for fixing PAT permissions — separate
+  instructions for fine-grained vs. classic tokens — instead of leaving
+  the user to work out which of Contents/Pull requests/Actions is missing
+  from a raw API error message.
+
 ## [1.2.1] - 2026-08-04
 
 ### Fixed
