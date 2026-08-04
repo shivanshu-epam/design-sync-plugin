@@ -1136,7 +1136,15 @@ function renderSyncTab(): HTMLElement {
         if (rows.length === 0) continue;
         const group = el('div', { className: 'diff-group' });
         group.appendChild(el('h2', {}, [category]));
-        for (const d of rows) group.appendChild(renderDiffRow(d));
+        // cascadeOnly rows have nothing to decide (see 1.4.2) — clicking any
+        // button on them is a no-op, so showing each one at full size just
+        // pads out the list a reviewer actually has to scroll through.
+        // Collapsed into one summary per category instead of dropped
+        // entirely, since they're still worth being able to check.
+        const actionable = rows.filter((d) => !d.cascadeOnly);
+        const cascade = rows.filter((d) => d.cascadeOnly);
+        for (const d of actionable) group.appendChild(renderDiffRow(d));
+        if (cascade.length > 0) group.appendChild(renderCascadeGroup(cascade));
         container.appendChild(group);
       }
 
@@ -1170,11 +1178,42 @@ function renderSyncTab(): HTMLElement {
   return container;
 }
 
+// cascadeOnly rows (see 1.4.2) have nothing to decide — clicking any button
+// on them doesn't affect the sync. Collapsed by default, one compact line
+// per row, instead of each getting the full renderDiffRow treatment
+// (label chips, resolution controls' worth of vertical space, the
+// explanatory note repeated N times) — that's what made a category with a
+// handful of real conflicts scroll for pages once a token with many
+// downstream references changed. Reuses the existing .setup-guide
+// collapsible and .audit-change-row compact-list styling rather than
+// introducing new CSS for a one-off.
+function renderCascadeGroup(rows: DiffEntry[]): HTMLElement {
+  const details = el('details', { className: 'setup-guide' });
+  details.appendChild(el('summary', {}, [`${rows.length} more auto-resolve — no action needed`]));
+  const body = el('div', {});
+  body.appendChild(
+    el('p', { className: 'hint' }, [
+      "These reference a token above and update automatically once it's resolved — nothing to decide here.",
+    ]),
+  );
+  for (const d of rows) {
+    body.appendChild(
+      el('div', { className: 'audit-change-row' }, [
+        el('div', { className: 'audit-change-key' }, [d.key]),
+        el('div', { className: 'audit-change-values' }, [`${d.figmaDisplay} → ${d.githubDisplay}`]),
+      ]),
+    );
+  }
+  details.appendChild(body);
+  return details;
+}
+
+// Only ever called with actionable rows (cascadeOnly ones get the compact
+// collapsed treatment in renderCascadeGroup instead) — no cascadeOnly
+// branching needed here.
 function renderDiffRow(d: DiffEntry): HTMLElement {
-  const row = el('div', { className: `diff-row status-${d.status}${d.cascadeOnly ? ' cascade-only' : ''}` });
-  const badgeText = d.cascadeOnly
-    ? 'Auto-resolves'
-    : { 'added-figma': 'New in Figma', 'added-github': 'New in GitHub', modified: 'Conflict', unchanged: '' }[d.status];
+  const row = el('div', { className: `diff-row status-${d.status}` });
+  const badgeText = { 'added-figma': 'New in Figma', 'added-github': 'New in GitHub', modified: 'Conflict', unchanged: '' }[d.status];
   row.appendChild(el('div', { className: 'diff-key' }, [d.key, el('span', { className: 'diff-badge' }, [badgeText])]));
   row.appendChild(
     el('div', { className: 'diff-values' }, [
@@ -1183,18 +1222,7 @@ function renderDiffRow(d: DiffEntry): HTMLElement {
     ]),
   );
 
-  if (d.status === 'modified' && d.cascadeOnly) {
-    // Nothing stored on this key changed — only what it resolves to,
-    // because something it points at changed elsewhere in this diff. No
-    // resolution to make: it settles on its own once the underlying
-    // reference is handled, same as any CSS variable's consumers picking
-    // up a new value automatically.
-    row.appendChild(
-      el('p', { className: 'cascade-note' }, [
-        "Nothing to decide here — this value only changed because a token it references changed. It resolves automatically once that token is handled.",
-      ]),
-    );
-  } else if (d.status === 'modified') {
+  if (d.status === 'modified') {
     const resKey = `${d.category}:${d.key}`;
     const current = state.resolutions[resKey];
     const controls = el('div', { className: 'resolution-controls' });

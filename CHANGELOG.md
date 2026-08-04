@@ -32,6 +32,24 @@ build time).
   including one that reproduces the exact "Use GitHub resolution, GitHub
   already matches" scenario that exposed this gap.
 
+## [1.10.1] - 2026-08-04
+
+### Changed
+- **Sync tab collapses cascade-only rows instead of showing each one at
+  full size.** A token with many downstream references (e.g. a primitive
+  used by several component tokens) could turn a review with one real
+  conflict into a page of identical "Nothing to decide here…" boxes,
+  each with its own label chips and explanatory text repeated. Cascade
+  rows within a category now collapse into one `<details>` — "N more
+  auto-resolve — no action needed" — closed by default, with each row
+  reduced to a single compact line (key, then `figma value → github
+  value`) when expanded. Real conflicts and new-token rows are
+  unaffected, still shown in full immediately. Reuses the existing
+  `.setup-guide`/`.audit-change-row` styling rather than adding new CSS.
+  Removed the now-dead `cascadeOnly` branch from `renderDiffRow` (it's
+  only ever called with actionable rows now) and the `.diff-row.cascade-
+  only`/`.cascade-note` CSS that went with it.
+
 ## [1.10.0] - 2026-08-04
 
 ### Changed
