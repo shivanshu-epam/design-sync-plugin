@@ -9,6 +9,24 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.3.1] - 2026-08-04
+
+### Changed
+- **Connect tab restructured into three numbered, visually separated
+  sections** (Token → Find repository (optional) → Repository details),
+  with `<hr>` dividers between them — the token, repo-picker, and
+  owner/name/branch/path fields had become visually flat and crowded
+  once the repo picker (v1.3.0) landed on top of the existing fields.
+- Required fields (token, owner, repository name) now show a red `*`
+  next to the label. Branch and token file path aren't marked required
+  even though they always end up populated — they have real defaults
+  (`main`, `design-tokens.json`) shown as placeholders, so leaving them
+  blank is a valid, common choice, not an error state.
+- Consolidated the token-scope guidance into one hint directly under the
+  token field (previously split: a short note near the top, a longer one
+  at the bottom of the whole form) — now it's read once, right where it's
+  relevant, instead of twice in two different places.
+
 ## [1.3.0] - 2026-08-04
 
 ### Added

@@ -731,16 +731,28 @@ function renderConnectTab(): HTMLElement {
   const pathInput = el('input', { type: 'text', placeholder: 'design-tokens.json', value: s.path });
   const tokenInput = el('input', { type: 'password', placeholder: 'ghp_...', value: s.token });
 
+  const requiredLabel = (text: string) => el('label', {}, [text, el('span', { className: 'required-mark' }, ['*'])]);
   const row = (labelText: string, input: HTMLElement) =>
     el('div', { className: 'field' }, [el('label', {}, [labelText]), input]);
+  const requiredRow = (labelText: string, input: HTMLElement) =>
+    el('div', { className: 'field' }, [requiredLabel(labelText), input]);
 
-  container.appendChild(row('Personal access token (repo scope)', tokenInput));
+  // --- 1. Token (required — nothing else in this tab works without it) ---
+  container.appendChild(el('h2', {}, ['1. Personal access token']));
+  container.appendChild(requiredRow('Fine-grained token, scoped to one repo', tokenInput));
+  container.appendChild(
+    el('p', { className: 'hint' }, [
+      'Stored locally on this machine only (figma.clientStorage), never leaves it except to talk to api.github.com. ' +
+        'Needs Contents: read/write, Pull requests: read/write (Sync opens a PR), and Actions: read/write ' +
+        '(only for the Status tab\'s "Rebuild Storybook" button).',
+    ]),
+  );
 
-  // Lets the user pick from repos the token can actually see instead of
-  // hand-typing owner/repo — a fine-grained PAT is usually scoped to just
-  // one or two repos anyway, so this list is typically short. Native
-  // <input list>/<datalist> gives type-ahead filtering for free, no custom
-  // dropdown widget needed.
+  container.appendChild(el('hr', { className: 'section-divider' }));
+
+  // --- 2. Repo picker (optional convenience — the fields below always
+  // work by hand, this just saves typing owner/repo) ---
+  container.appendChild(el('h2', {}, ['2. Find repository (optional)']));
   const datalistId = 'repo-options';
   const repoSearchInput = el('input', {
     type: 'text',
@@ -773,7 +785,7 @@ function renderConnectTab(): HTMLElement {
   loadReposBtn.onclick = () => loadUserRepos(tokenInput.value.trim());
   container.appendChild(
     el('div', { className: 'field' }, [
-      el('label', {}, ['Find repository']),
+      el('label', {}, ['Lists every repo the token above can see']),
       el('div', { className: 'btn-row' }, [repoSearchInput, loadReposBtn]),
     ]),
   );
@@ -782,22 +794,19 @@ function renderConnectTab(): HTMLElement {
     container.appendChild(el('div', { className: 'status-banner error' }, [state.reposError]));
   } else if (state.availableRepos.length > 0) {
     container.appendChild(
-      el('p', { className: 'hint' }, [`${state.availableRepos.length} repositor${state.availableRepos.length === 1 ? 'y' : 'ies'} loaded — pick one to fill in the fields below, or type to keep filtering.`]),
-    );
-  } else {
-    container.appendChild(
-      el('p', { className: 'hint' }, ['Paste your token above, then "Load my repos" — or just fill in owner/name manually below.']),
+      el('p', { className: 'hint' }, [`${state.availableRepos.length} repositor${state.availableRepos.length === 1 ? 'y' : 'ies'} loaded — selecting one fills in the fields below.`]),
     );
   }
 
-  container.appendChild(row('Repository owner', ownerInput));
-  container.appendChild(row('Repository name', repoInput));
+  container.appendChild(el('hr', { className: 'section-divider' }));
+
+  // --- 3. Repository details (owner/name required; branch/path have
+  // sensible defaults, shown as placeholders, so they're not marked
+  // required even though something always ends up in them) ---
+  container.appendChild(el('h2', {}, ['3. Repository details']));
+  container.appendChild(requiredRow('Repository owner', ownerInput));
+  container.appendChild(requiredRow('Repository name', repoInput));
   container.appendChild(el('div', { className: 'row' }, [row('Branch', branchInput), row('Token file path', pathInput)]));
-  container.appendChild(
-    el('p', { className: 'hint' }, [
-      'Token stored locally on this machine only (figma.clientStorage), never leaves it except to talk to api.github.com. Use a fine-grained token scoped to this one repo, with Contents: read/write (branches + commits), Pull requests: read/write (Sync opens a PR rather than committing directly), and Actions: read/write (only needed for the Status tab\'s "Rebuild Storybook" button).',
-    ]),
-  );
 
   const readSettings = (): GithubSettings => ({
     owner: ownerInput.value.trim(),
