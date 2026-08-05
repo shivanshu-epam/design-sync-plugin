@@ -167,6 +167,15 @@ const state: {
   notifyTestSending: boolean;
   notifyTestMessage: string | null;
   notifyTestError: string | null;
+  // Connect tab: false + already configured => show the compact status
+  // card instead of the full form. Global state, not a local closure
+  // variable — render() rebuilds this tab's DOM from scratch on every
+  // unrelated state change, so a closure-local toggle would silently
+  // reset every time. (The manual-entry owner/repo/branch/path disclosure
+  // doesn't need its own state field — its open/closed default is derived
+  // fresh each render from whether those fields already have values, same
+  // pattern as renderStorybookGuide's `needsSetup`.)
+  connectEditing: boolean;
 } = {
   activeTab: 'connect',
   settings: null,
@@ -202,6 +211,7 @@ const state: {
   notifyTestSending: false,
   notifyTestMessage: null,
   notifyTestError: null,
+  connectEditing: false,
 };
 
 function appendLog(line: string) {
@@ -792,15 +802,50 @@ function render() {
   if (state.activeTab === 'history') root.appendChild(renderHistoryTab());
 }
 
-function renderConnectTab(): HTMLElement {
-  const container = el('div');
-  container.appendChild(el('h2', {}, ['GitHub Repository']));
+// Compact "already connected" state — replaces the full form once
+// configured, so returning to this tab day-to-day shows 2 lines instead of
+// the entire setup flow. Test/Edit are icon-only, so both need an explicit
+// aria-label (the accessibility rule this whole revamp leaned on: icon
+// buttons without a label are a High-severity anti-pattern).
+function renderConnectionCard(settings: GithubSettings): HTMLElement {
+  const card = el('div', { className: 'connect-card' });
+  const testBtn = el('button', { className: 'icon-btn', title: 'Test this connection' }, [icon('Pulse', undefined, 13)]);
+  testBtn.setAttribute('aria-label', 'Test connection');
+  testBtn.onclick = async () => {
+    testBtn.replaceChildren(icon('CircleNotch', 'spin', 13));
+    testBtn.setAttribute('disabled', 'true');
+    state.connectStatus = await testConnection(settings);
+    render();
+  };
+  const editBtn = el('button', { className: 'icon-btn', title: 'Edit connection settings' }, [icon('PencilSimple', undefined, 13)]);
+  editBtn.setAttribute('aria-label', 'Edit connection');
+  editBtn.onclick = () => {
+    state.connectEditing = true;
+    state.connectStatus = null;
+    render();
+  };
+  card.appendChild(
+    el('div', { className: 'connect-card-header' }, [
+      icon('CheckCircle', 'connect-card-icon', 16),
+      el('span', { className: 'connect-card-title' }, ['Connected']),
+      el('div', { className: 'connect-card-actions' }, [testBtn, editBtn]),
+    ]),
+  );
+  card.appendChild(
+    el('div', { className: 'connect-card-detail' }, [el('strong', {}, [`${settings.owner}/${settings.repo}`]), ` · ${settings.branch}`]),
+  );
+  return card;
+}
 
-  if (state.connectStatus) {
-    container.appendChild(statusBanner(state.connectStatus.ok ? 'success' : 'error', [state.connectStatus.message]));
-  }
-
+// The setup/edit form — shown when not yet configured, or when Edit was
+// clicked on the compact card. Condensed from the original 3-section
+// always-expanded layout: the token's permission requirements and the
+// owner/repo/branch/path fields both move behind collapsed disclosures,
+// since the search-driven flow (the common path) never needs to touch
+// them directly.
+function renderConnectForm(container: HTMLElement): void {
   const s = state.settings ?? { owner: '', repo: '', branch: 'main', path: 'design-tokens.json', token: '' };
+  const wasConfigured = isConfigured(state.settings);
 
   const ownerInput = el('input', { type: 'text', placeholder: 'octocat', value: s.owner });
   const repoInput = el('input', { type: 'text', placeholder: 'design-system', value: s.repo });
@@ -814,26 +859,31 @@ function renderConnectTab(): HTMLElement {
   const requiredRow = (labelText: string, input: HTMLElement) =>
     el('div', { className: 'field' }, [requiredLabel(labelText), input]);
 
-  // --- 1. Token (required — nothing else in this tab works without it) ---
-  container.appendChild(el('h2', {}, ['1. Personal access token']));
-  container.appendChild(requiredRow('Fine-grained token, scoped to one repo', tokenInput));
+  // --- Token ---
+  container.appendChild(requiredRow('Personal access token', tokenInput));
   container.appendChild(
-    el('p', { className: 'hint' }, [
-      'Stored locally on this machine only (figma.clientStorage), never leaves it except to talk to api.github.com. ' +
-        'Needs Contents: read/write, Pull requests: read/write (Sync opens a PR), and Actions: read/write ' +
-        '(only for the Status tab\'s "Rebuild Storybook" button).',
+    el('p', { className: 'hint connect-security-line' }, [icon('CheckCircle', undefined, 11), 'Stored locally, never uploaded except to api.github.com']),
+  );
+  const permsDetails = el('details', { className: 'setup-guide nested' });
+  permsDetails.appendChild(detailsSummary(permsDetails, ['What permissions does this need?']));
+  permsDetails.appendChild(
+    el('div', {}, [
+      el('p', { className: 'hint' }, [
+        'Fine-grained token, scoped to one repo. Needs Contents: read/write, Pull requests: read/write (Sync opens a PR), ' +
+          'and Actions: read/write (only for the Status tab\'s "Rebuild Storybook" and "Send test notification" buttons).',
+      ]),
     ]),
   );
+  container.appendChild(permsDetails);
 
   container.appendChild(el('hr', { className: 'section-divider' }));
 
-  // --- 2. Repo picker (optional convenience — the fields below always
-  // work by hand, this just saves typing owner/repo) ---
-  container.appendChild(el('h2', {}, ['2. Find repository (optional)']));
+  // --- Repo search (the default path) ---
+  container.appendChild(el('label', {}, ['Find your repository']));
   const datalistId = 'repo-options';
   const repoSearchInput = el('input', {
     type: 'text',
-    placeholder: state.loadingRepos ? 'Loading…' : 'Type to search, or pick from the list',
+    placeholder: state.loadingRepos ? 'Loading…' : 'Search or pick from the list',
   });
   // `list` is a read-only IDL property on HTMLInputElement (reflects the
   // associated <datalist>, doesn't set it) — must go through setAttribute,
@@ -859,35 +909,36 @@ function renderConnectTab(): HTMLElement {
   };
   const loadReposBtn = el(
     'button',
-    { title: 'Fetch every repository the token above can see, via GET /user/repos' },
-    loadingLabel(state.loadingRepos, 'Loading…', 'Load my repos'),
+    { className: 'icon-btn', title: 'Fetch every repository the token above can see, via GET /user/repos' },
+    state.loadingRepos ? [icon('CircleNotch', 'spin', 13)] : [icon('ArrowsClockwise', undefined, 13)],
   );
+  loadReposBtn.setAttribute('aria-label', 'Load my repos');
   if (state.loadingRepos) loadReposBtn.setAttribute('disabled', 'true');
   loadReposBtn.onclick = () => loadUserRepos(tokenInput.value.trim());
-  container.appendChild(
-    el('div', { className: 'field' }, [
-      el('label', {}, ['Lists every repo the token above can see']),
-      el('div', { className: 'btn-row' }, [repoSearchInput, loadReposBtn]),
-    ]),
-  );
+  container.appendChild(el('div', { className: 'btn-row' }, [repoSearchInput, loadReposBtn]));
   container.appendChild(datalist);
   if (state.reposError) {
     container.appendChild(statusBanner('error', [state.reposError]));
   } else if (state.availableRepos.length > 0) {
     container.appendChild(
-      el('p', { className: 'hint' }, [`${state.availableRepos.length} repositor${state.availableRepos.length === 1 ? 'y' : 'ies'} loaded — selecting one fills in the fields below.`]),
+      el('p', { className: 'hint' }, [`${state.availableRepos.length} repositor${state.availableRepos.length === 1 ? 'y' : 'ies'} loaded.`]),
     );
   }
 
-  container.appendChild(el('hr', { className: 'section-divider' }));
-
-  // --- 3. Repository details (owner/name required; branch/path have
-  // sensible defaults, shown as placeholders, so they're not marked
-  // required even though something always ends up in them) ---
-  container.appendChild(el('h2', {}, ['3. Repository details']));
-  container.appendChild(requiredRow('Repository owner', ownerInput));
-  container.appendChild(requiredRow('Repository name', repoInput));
-  container.appendChild(el('div', { className: 'row' }, [row('Branch', branchInput), row('Token file path', pathInput)]));
+  // --- Manual entry (escape hatch — open by default only when there's
+  // nothing to show yet, i.e. no owner/repo set and search hasn't been
+  // used; otherwise collapsed, since search already filled them in) ---
+  const manualDetails = el('details', {
+    className: 'setup-guide nested',
+    open: !s.owner.trim() && !s.repo.trim(),
+  });
+  manualDetails.appendChild(detailsSummary(manualDetails, ['Enter repository manually']));
+  const manualBody = el('div', {});
+  manualBody.appendChild(requiredRow('Repository owner', ownerInput));
+  manualBody.appendChild(requiredRow('Repository name', repoInput));
+  manualBody.appendChild(el('div', { className: 'row' }, [row('Branch', branchInput), row('Token file path', pathInput)]));
+  manualDetails.appendChild(manualBody);
+  container.appendChild(manualDetails);
 
   const readSettings = (): GithubSettings => ({
     owner: ownerInput.value.trim(),
@@ -897,22 +948,35 @@ function renderConnectTab(): HTMLElement {
     token: tokenInput.value.trim(),
   });
 
-  const saveBtn = el('button', { className: 'primary', textContent: 'Save' });
-  saveBtn.onclick = () => {
+  // Connect = save + test in one step. Jumps to Sync only on a VERIFIED
+  // successful connection — the old Save button jumped unconditionally
+  // once fields were non-empty, even with an invalid token, dumping you
+  // onto an empty/broken Sync tab. On failure, stays put with the same
+  // error + permission-fix guide Test connection already showed.
+  const connectBtn = el('button', { className: 'primary' }, ['Connect']);
+  connectBtn.onclick = async () => {
+    connectBtn.replaceChildren(...loadingLabel(true, 'Connecting…', 'Connect'));
+    connectBtn.setAttribute('disabled', 'true');
     state.settings = readSettings();
     postToPlugin({ type: 'save-settings', settings: state.settings });
-    state.connectStatus = { ok: true, message: 'Settings saved.' };
-    if (isConfigured(state.settings)) {
+    state.connectStatus = await testConnection(state.settings);
+    if (state.connectStatus.ok && isConfigured(state.settings)) {
+      state.connectEditing = false;
       // Don't make them reopen the plugin to see the diff — jump straight
       // to Sync and run the comparison now that we have everything we need.
       state.activeTab = 'sync';
       render();
       runCompare();
-    } else {
-      render();
+      return;
     }
+    connectBtn.replaceChildren(...loadingLabel(false, 'Connecting…', 'Connect'));
+    connectBtn.removeAttribute('disabled');
+    render();
   };
 
+  // Test connection stays available independently — Connect bundles a test
+  // in for first-time setup, but re-testing without touching other fields
+  // (e.g. after rotating the token) is still a real, separate need.
   const testBtn = el('button', {}, ['Test connection']);
   testBtn.onclick = async () => {
     testBtn.replaceChildren(...loadingLabel(true, 'Testing…', 'Test connection'));
@@ -923,23 +987,60 @@ function renderConnectTab(): HTMLElement {
     render();
   };
 
-  container.appendChild(el('div', { className: 'btn-row' }, [saveBtn, testBtn]));
+  const actionsRow = el('div', { className: 'btn-row' }, [connectBtn, testBtn]);
+  if (wasConfigured) {
+    const cancelBtn = el('button', {}, ['Cancel']);
+    cancelBtn.onclick = () => {
+      state.connectEditing = false;
+      state.connectStatus = null;
+      render();
+    };
+    actionsRow.appendChild(cancelBtn);
+  }
+  container.appendChild(actionsRow);
 
-  if (state.history.length > 0) {
-    const historyHeading = el('h2', {}, ['Recent syncs']);
-    historyHeading.style.marginTop = '18px';
-    container.appendChild(historyHeading);
-    for (const entry of state.history.slice(0, 5)) {
-      container.appendChild(
-        el('div', { className: 'history-item' }, [`${new Date(entry.timestamp).toLocaleString()} — `, prLink(entry.prUrl, entry.prNumber)]),
-      );
+  if (state.connectStatus) {
+    container.appendChild(statusBanner(state.connectStatus.ok ? 'success' : 'error', [state.connectStatus.message]));
+    if (!state.connectStatus.ok) {
+      const guide = renderPermissionErrorGuide(state.connectStatus.message);
+      if (guide) container.appendChild(guide);
     }
   }
+}
+
+// Always-available history, collapsed by default — was an always-visible
+// list even for someone who never looks at it. No accordion at all when
+// there's nothing to show, rather than a pointless empty trigger.
+function renderRecentActivity(): HTMLElement | null {
+  if (state.history.length === 0) return null;
+  const details = el('details', { className: 'setup-guide' });
+  details.appendChild(detailsSummary(details, [`Recent activity (${Math.min(state.history.length, 5)})`]));
+  const body = el('div', {});
+  for (const entry of state.history.slice(0, 5)) {
+    body.appendChild(
+      el('div', { className: 'history-item' }, [`${new Date(entry.timestamp).toLocaleString()} — `, prLink(entry.prUrl, entry.prNumber)]),
+    );
+  }
+  details.appendChild(body);
+  return details;
+}
+
+function renderConnectTab(): HTMLElement {
+  const container = el('div');
+
+  if (isConfigured(state.settings) && !state.connectEditing) {
+    container.appendChild(renderConnectionCard(state.settings));
+    if (state.connectStatus) {
+      container.appendChild(statusBanner(state.connectStatus.ok ? 'success' : 'error', [state.connectStatus.message]));
+    }
+  } else {
+    renderConnectForm(container);
+  }
+
+  const activity = renderRecentActivity();
+  if (activity) container.appendChild(activity);
 
   if (isConfigured(state.settings)) {
-    container.appendChild(el('hr', { className: 'section-divider' }));
-    const notifyHeading = el('h2', {}, ['Notifications (optional)']);
-    container.appendChild(notifyHeading);
     container.appendChild(renderNotificationsGuide());
   }
 
@@ -1432,45 +1533,57 @@ function renderPermissionErrorGuide(error: string): HTMLElement | null {
 // and notify-on-sync.yml in the tokens repo.
 function renderNotificationsGuide(): HTMLElement {
   const details = el('details', { className: 'setup-guide' });
-  details.appendChild(detailsSummary(details, ['Set up Teams or Slack notifications']));
+  details.appendChild(detailsSummary(details, ['Notifications']));
 
   const body = el('div', {});
   body.appendChild(
     el('p', { className: 'hint' }, [
-      'Posts a message whenever a sync lands (see the History tab) — actor, PR link, and how many tokens changed. ' +
-        'Requires ',
+      'Posts a message whenever a sync lands — actor, PR link, how many tokens changed. Set up either provider, or both — neither is required.',
+    ]),
+  );
+
+  const teamsDetails = el('details', { className: 'setup-guide nested' });
+  teamsDetails.appendChild(detailsSummary(teamsDetails, ['Microsoft Teams']));
+  teamsDetails.appendChild(
+    el('div', {}, [
+      el('pre', {}, [
+        '1. In the target Teams channel: ⋯ next to the channel name → Workflows\n' +
+          '   (Teams retired classic "Connectors" webhooks — Workflows is the\n' +
+          '   current replacement, built on Power Automate.)\n' +
+          '2. Search the template "Post to a channel when a webhook request is\n' +
+          '   received" → select this channel → Add workflow\n' +
+          '3. Copy the URL it gives you\n' +
+          `4. github.com/${state.settings?.owner ?? '<owner>'}/${state.settings?.repo ?? '<repo>'}` +
+          '/settings/secrets/actions → New repository secret\n' +
+          '   Name: TEAMS_WEBHOOK_URL — Value: the URL from step 3',
+      ]),
+    ]),
+  );
+  body.appendChild(teamsDetails);
+
+  const slackDetails = el('details', { className: 'setup-guide nested' });
+  slackDetails.appendChild(detailsSummary(slackDetails, ['Slack']));
+  slackDetails.appendChild(
+    el('div', {}, [
+      el('pre', {}, [
+        '1. api.slack.com/apps → Create New App → From scratch\n' +
+          '2. Features → Incoming Webhooks → toggle on\n' +
+          '3. Add New Webhook to Workspace → pick the channel → Allow\n' +
+          '4. Copy the URL (starts hooks.slack.com/services/…)\n' +
+          `5. github.com/${state.settings?.owner ?? '<owner>'}/${state.settings?.repo ?? '<repo>'}` +
+          '/settings/secrets/actions → New repository secret\n' +
+          '   Name: SLACK_WEBHOOK_URL — Value: the URL from step 4',
+      ]),
+    ]),
+  );
+  body.appendChild(slackDetails);
+  body.appendChild(
+    el('p', { className: 'hint' }, [
+      'Requires ',
       el('code', {}, ['.github/workflows/notify-on-sync.yml']),
       ' and ',
       el('code', {}, ['scripts/notify-on-sync.mjs']),
-      ' to exist in the tokens repo. Set up either provider, or both — neither is required.',
-    ]),
-  );
-
-  body.appendChild(el('p', { className: 'hint' }, [el('strong', {}, ['Microsoft Teams']), ':']));
-  body.appendChild(
-    el('pre', {}, [
-      '1. In the target Teams channel: ⋯ next to the channel name → Workflows\n' +
-        '   (Teams retired classic "Connectors" webhooks — Workflows is the\n' +
-        '   current replacement, built on Power Automate.)\n' +
-        '2. Search the template "Post to a channel when a webhook request is\n' +
-        '   received" → select this channel → Add workflow\n' +
-        '3. Copy the URL it gives you\n' +
-        `4. github.com/${state.settings?.owner ?? '<owner>'}/${state.settings?.repo ?? '<repo>'}` +
-        '/settings/secrets/actions → New repository secret\n' +
-        '   Name: TEAMS_WEBHOOK_URL — Value: the URL from step 3',
-    ]),
-  );
-
-  body.appendChild(el('p', { className: 'hint' }, [el('strong', {}, ['Slack']), ':']));
-  body.appendChild(
-    el('pre', {}, [
-      '1. api.slack.com/apps → Create New App → From scratch\n' +
-        '2. Features → Incoming Webhooks → toggle on\n' +
-        '3. Add New Webhook to Workspace → pick the channel → Allow\n' +
-        '4. Copy the URL (starts hooks.slack.com/services/…)\n' +
-        `5. github.com/${state.settings?.owner ?? '<owner>'}/${state.settings?.repo ?? '<repo>'}` +
-        '/settings/secrets/actions → New repository secret\n' +
-        '   Name: SLACK_WEBHOOK_URL — Value: the URL from step 4',
+      ' to exist in the tokens repo.',
     ]),
   );
 

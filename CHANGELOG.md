@@ -9,6 +9,50 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.13.0] - 2026-08-04
+
+### Changed
+- **Connect tab redesign — first of a tab-by-tab IA pass, not just
+  re-skinning.** The always-expanded form (token, repo search, owner/
+  repo/branch/path, Save + Test, an always-visible history list, and a
+  gated Notifications section) is replaced with progressive disclosure:
+  - **Compact status card** once configured — `owner/repo · branch` with
+    icon-only Test/Edit actions — instead of the full form staying
+    expanded forever. Editing re-expands it, pre-filled; Cancel returns
+    to the card without discarding the saved connection.
+  - **Token's 3-sentence permissions paragraph** replaced with a one-line
+    security note + a collapsed "What permissions does this need?"
+    detail.
+  - **Owner/repo/branch/path fields** collapsed behind "Enter repository
+    manually," open by default only when nothing's set yet (derived from
+    current field values, not new state — same pattern as
+    `renderStorybookGuide`'s existing `needsSetup`-computed-open detail).
+  - **Recent activity** and **Notifications** both collapsed accordions
+    now (Notifications was already one, just previously gated behind an
+    always-visible "Notifications (optional)" heading); Recent activity
+    renders nothing at all when there's no history, instead of a
+    permanently-visible empty list.
+  - **Notifications' Teams/Slack setup instructions** split into their
+    own nested sub-accordions instead of both dumping in full the moment
+    "Notifications" opens — a new `.setup-guide.nested` style variant
+    (no border/background of its own, avoids box-in-box).
+- **Save + Test connection combined into one "Connect" action** for
+  first-time setup. Deliberate behavior change, confirmed with the user
+  before implementing: previously, Save jumped to the Sync tab and ran
+  Compare as soon as owner/repo/token were merely non-empty — even with
+  an invalid token, landing on an unverified, possibly-broken Sync tab.
+  Connect now saves, tests, and only jumps to Sync on a **verified**
+  successful connection; on failure it stays on Connect showing the same
+  error + permission-fix guide Test connection already used. Test
+  connection itself is preserved as an independent action — both as a
+  secondary button next to Connect in the form, and as an icon action on
+  the compact card, for re-verifying without touching other fields (e.g.
+  after rotating the token).
+- Every icon-only control added here (Test/Edit on the card, the repo
+  search's reload button) gets an explicit `aria-label` — the same
+  Accessibility rule ("icon buttons without labels" is a High-severity
+  anti-pattern) the icon/color revamp leaned on.
+
 ## [1.12.0] - 2026-08-04
 
 ### Changed
