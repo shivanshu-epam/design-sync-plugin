@@ -1,4 +1,4 @@
-# Design Sync — Extension Roadmap (Phases 1–11)
+# Design Sync — Extension Roadmap (Phases 1–17)
 
 **Purpose of this document**: This is a build-ready engineering specification for an LLM
 developer (or a human engineer) to implement, phase by phase, on top of the *existing*
@@ -9,9 +9,16 @@ needed, modifications to existing files where behavior changes, and explicit cal
 of exactly which existing function/tab/module each phase touches.
 
 **How to use this doc**: Each phase is self-contained enough to hand to an LLM as a
-single work order, but phases have real dependencies (see §14). Do not build Phase 7
-before Phase 1. Do not build Phase 11 before Phase 1 and Phase 10. The dependency graph
-in §14 is authoritative if this doc and phase ordering ever seem to disagree.
+single work order, but phases have real dependencies (see §20). Do not build Phase 7
+before Phase 1. Do not build Phase 11 before Phase 1 and Phase 10. Do not build Phase 15
+before Phase 11. The dependency graph in §20 is authoritative if this doc and phase
+ordering ever seem to disagree.
+
+**Status and priority** (updated 2026-08-05, reflecting an explicit product decision —
+not a default or a guess): each phase now carries a `**Status**` and `**Priority**` line
+directly under its heading. See §1a immediately below for the full table and what each
+value means. Priorities are sticky until explicitly revisited — do not re-litigate a
+"Lowest" or "Medium — not now" call inside an individual phase's own section.
 
 **Ground rule for every phase**: preserve the existing sandbox/iframe split
 (`code.ts` = Figma document access, no network; `ui.ts` = network + GitHub + UI, no
@@ -79,7 +86,46 @@ Before touching any phase below, load and understand these existing pieces:
 
 ---
 
+## 1a. Status and priority overview
+
+Legend:
+- **Status**: `✅ Shipped` (built and released — see the plugin's own `CHANGELOG.md` for
+  the version), `🟡 Partial` (some of the phase shipped, some didn't), `❌ Not started`.
+- **Priority**: `Now` (actively being worked), `Medium — not now` (real, worth doing,
+  deliberately not picked up yet), `Lowest — no current use case` (no known need right
+  now; revisit if that changes), `Blocked` (depends on a phase that isn't started),
+  or unset for phases proposed but not yet prioritized by the user.
+
+| # | Phase | Status | Priority |
+|---|---|---|---|
+| 1 | Token model completeness | ✅ Shipped | — (foundation, done) |
+| 2 | Bidirectional Variable write-back | ✅ Shipped | — (done) |
+| 3 | PR-based governed sync | ✅ Shipped | — (done) |
+| 4 | CI/CD automation | ✅ Shipped | — (done) |
+| 5 | Versioned audit trail and rollback | ✅ Shipped | — (done) |
+| 6 | Multi-brand / multi-file orchestration | ❌ Not started | **Lowest — no current use case** |
+| 7 | Semantic diff and AI-assisted conflict resolution | ❌ Not started | **Medium — not now** |
+| 8 | Cross-platform distribution (Style Dictionary) | ❌ Not started | **Lowest — no current use case** |
+| 9 | Notifications and live collaboration | 🟡 Partial — notifications shipped (v1.8.0); the static status page shipped (v1.11.0) then was explicitly reverted (v1.11.1, "not wanted") | Notifications: done. Status page: rejected, not planned. |
+| 10 | Enterprise backend and platform layer | ❌ Not started | **Medium — not now** |
+| 11 | Consumption-side drift detection | ❌ Not started | Blocked — needs Phase 1 (done) and Phase 10 (medium, not now) |
+| 12 | PR preview builds | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
+| 13 | Contrast/accessibility linting at sync time | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
+| 14 | Token deprecation lifecycle | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
+| 15 | Pre-sync blast-radius preview | ❌ Not started | Unprioritized (new, proposed 2026-08-05) — Blocked on Phase 11 regardless |
+| 16 | Concurrent-sync advisory lock | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
+| 17 | Deep-linking between Storybook/status page and Figma | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
+
+Separately: the plugin's v1.12.0–v1.16.2 release series (icons, progressive disclosure,
+the full tab-by-tab UI redesign) is **not** one of these phases — it's an orthogonal
+UX-polish track layered on top of whatever capability already exists, not new capability
+itself. See `CHANGELOG.md` for that work.
+
+---
+
 ## 2. Phase 1 — Token model completeness
+
+**Status**: ✅ Shipped. **Priority**: — (foundation; everything else depends on this).
 
 ### Goal
 Extend the `TokenSet` model to cover STRING and FLOAT-adjacent BOOLEAN variables,
@@ -206,6 +252,8 @@ looking at the diff before pushing.
 ---
 
 ## 3. Phase 2 — Bidirectional Variable write-back
+
+**Status**: ✅ Shipped. **Priority**: — (done).
 
 ### Goal
 When a GitHub-only token is applied back into Figma, create or update a Figma
@@ -335,6 +383,8 @@ async function applyTokensAsVariables(tokens: DesignToken[], tokenSet: TokenSet)
 
 ## 4. Phase 3 — PR-based governed sync
 
+**Status**: ✅ Shipped. **Priority**: — (done).
+
 ### Goal
 Replace the current "commit directly to the configured branch" sync with an
 opt-in mode where Sync opens a new branch + pull request instead, gated by required
@@ -422,6 +472,10 @@ async function syncToGitHub(mergedTokens: TokenSet, mode: 'direct' | 'pull-reque
 ---
 
 ## 5. Phase 4 — CI/CD automation
+
+**Status**: ✅ Shipped — `design-tokens` repo's `ci.yml` runs `validate-tokens.mjs` +
+`build-storybook` on every push/PR; `deploy-storybook.yml` handles the plugin-triggered
+rebuild. **Priority**: — (done).
 
 ### Goal
 A GitHub Actions workflow in the `design-tokens` repo that automatically rebuilds and
@@ -536,6 +590,8 @@ jobs:
 
 ## 6. Phase 5 — Versioned audit trail and rollback
 
+**Status**: ✅ Shipped (v1.6.0; UI redesigned v1.16.0–v1.16.2). **Priority**: — (done).
+
 ### Goal
 A structured, queryable history of every sync event (who, what tokens, from where, when),
 plus a rollback capability in the plugin UI — going beyond "read `git log` yourself."
@@ -637,6 +693,10 @@ interface AuditEntry {
 
 ## 7. Phase 6 — Multi-brand / multi-file orchestration
 
+**Status**: ❌ Not started. **Priority**: **Lowest — no current use case.** Explicit
+product decision (2026-08-05): not needed right now. Revisit if a genuine multi-brand /
+multi-repo requirement shows up.
+
 ### Goal
 Support N Figma files syncing into M token destinations (e.g. multiple brands, each
 with its own token file or its own path within one repo), instead of today's fixed
@@ -727,6 +787,10 @@ interface ConnectionConfig {
 ---
 
 ## 8. Phase 7 — Semantic diff and AI-assisted conflict resolution
+
+**Status**: ❌ Not started. **Priority**: **Medium — not now.** Real, worth doing once
+token sets are large enough (post multi-brand, per §21's build order) to justify it —
+deliberately not picked up yet (2026-08-05).
 
 ### Goal
 Layer an LLM-assisted pass on top of the existing raw diff (README §7 step 3) that
@@ -852,6 +916,10 @@ async function enrichDiff(raw: RawDiffResult, apiKey: string): Promise<SemanticE
 
 ## 9. Phase 8 — Cross-platform distribution via Style Dictionary
 
+**Status**: ❌ Not started. **Priority**: **Lowest — no current use case.** Explicit
+product decision (2026-08-05): no iOS/Android consumer waiting on this today. Revisit
+if native-platform demand shows up.
+
 ### Goal
 Pipe `design-tokens.json` through Style Dictionary to emit native platform token
 formats — iOS (Swift), Android (Kotlin/Compose), in addition to the web formats
@@ -959,6 +1027,13 @@ philosophy carried forward from the MVP.
 
 ## 10. Phase 9 — Notifications and live collaboration
 
+**Status**: 🟡 Partial. Notifications (Teams + Slack, via `notify-on-sync.yml`) shipped
+in v1.8.0 and are live. The static status page (this section's "Live status view")
+shipped in v1.11.0 and was **explicitly reverted** in v1.11.1 — "not wanted." Treat the
+status-page half as rejected, not merely undone; do not rebuild it without a fresh,
+explicit ask. **Priority**: notifications — done, no further action. Status page — not
+planned.
+
 ### Goal
 Push-based notifications (Slack/Teams) on sync events, and a live status view that
 replaces the current "open the plugin to check the static blob-SHA marker" pattern
@@ -1048,6 +1123,10 @@ jobs:
 ---
 
 ## 11. Phase 10 — Enterprise backend and platform layer
+
+**Status**: ❌ Not started. **Priority**: **Medium — not now.** Real, and framed by this
+doc itself as an optional capstone many teams may never need — deliberately not picked
+up yet (2026-08-05). Revisit once file/CI-based state genuinely stops scaling.
 
 ### Goal
 Introduce the first real backend service for the system: a database-backed API that
@@ -1202,6 +1281,9 @@ POST   /api/v1/webhooks/github           # receives repo push events directly, a
 ---
 
 ## 12. Phase 11 — Consumption-side drift detection
+
+**Status**: ❌ Not started. **Priority**: Blocked — needs Phase 1 (done) and Phase 10
+(medium, not now). Not independently prioritized while Phase 10 is on hold.
 
 ### Goal
 Detect hardcoded design values (colors, spacing, etc.) in application source code that
@@ -1428,51 +1510,455 @@ jobs:
 
 ---
 
-## 13. Cross-phase dependency graph
+## 13. Phase 12 — PR preview builds
+
+**Status**: ❌ Not started (new, proposed 2026-08-05). **Priority**: Unprioritized.
+
+### Goal
+Deploy a temporary, per-PR Storybook build reflecting a sync PR's token changes, so a
+reviewer can visually inspect the effect before merging, not just read the diff table.
+
+### Problem addressed
+Today's PR review (Phase 3) surfaces only a textual diff (Sync tab table / PR body). A
+reviewer has to mentally simulate what "`brand/primary`: `#3678E2` → `#2a5ec4`" actually
+looks like across dozens of components. This is the same "trust the diff, don't see the
+thing" gap that made visual regression testing valuable everywhere else in frontend
+engineering.
+
+### Dependencies
+Requires Phase 3 (PR-based sync — this phase hooks into the PR's lifecycle) and Phase 4
+(CI/CD automation — reuses the existing `build-storybook` step, just parameterized
+per-PR instead of per-push-to-main).
+
+### Files touched (`design-tokens` repo)
+- `.github/workflows/preview-storybook.yml` (new) — triggered on `pull_request` events
+  where the diff touches `design-tokens.json` or `.design-sync/audit-log.jsonl` (the
+  same path every Phase 3 sync PR always touches).
+- `scripts/deploy-preview.mjs` (new) — builds Storybook against the PR's head branch,
+  deploys to a PR-scoped path. Reuses the existing `build-storybook` step and config —
+  no new build tooling.
+
+### Algorithm
+1. On `pull_request` (`opened`/`synchronize`) where the diff touches
+   `design-tokens.json`: check out the PR's head branch, run the existing
+   `npm run build-storybook`.
+2. Deploy the build output to a path unique to that PR number (see Rejected
+   alternatives for the GitHub Pages vs. external host trade-off).
+3. Comment on the PR (via `GITHUB_TOKEN`, `github-script` action) with the preview URL —
+   a `synchronize` event edits the existing comment for that PR rather than posting a
+   new one every push.
+4. On PR close (merged or not), a cleanup job removes that PR's preview path — outputs
+   must not accumulate indefinitely.
+
+### UI changes
+Minimal, plugin-side: the Sync tab's pending-PR banner (already shows `prLink`) can
+optionally gain a second "Preview" link once the workflow's PR comment includes a
+discoverable marker, fetched via the PR's comments API. Not required for v1 — this is a
+code-review-time feature, not a sync-time one, and the PR comment alone is sufficient;
+the plugin's job already ends once the PR exists.
+
+### Acceptance criteria
+- Opening a sync PR triggers a preview build within one CI run.
+- The PR gets a comment with a working, unique preview URL.
+- A second push to the same PR (e.g. after resolving another conflict) updates the
+  existing comment rather than adding a new one.
+- Closing the PR (merged or not) removes the preview deployment within a reasonable
+  time.
+
+### Rejected alternatives
+- **Re-deploy the "real" Storybook (the one at the repo's primary Pages URL) on every
+  open PR.** Rejected: this would let an unmerged, potentially-wrong token set overwrite
+  what the team's shared Storybook shows, contradicting the entire point of Phase 3's
+  review gate.
+- **Host previews on a paid third-party service (Vercel/Netlify) instead of GitHub
+  Pages subdirectories.** Not a hard rejection — flagged as an implementation-time
+  decision if GitHub Pages' single-deploy-target model proves too awkward for
+  concurrent PR previews in practice; depends on how many concurrent PRs a team
+  typically has open.
+
+---
+
+## 14. Phase 13 — Contrast/accessibility linting at sync time
+
+**Status**: ❌ Not started (new, proposed 2026-08-05). **Priority**: Unprioritized.
+
+### Goal
+Catch WCAG contrast failures introduced by a token change before the sync PR is even
+opened, not after a designer or engineer notices in production.
+
+### Problem addressed
+Nothing in `validate-tokens.mjs` (Phase 4) or the Sync tab's diff logic checks whether a
+new/changed color token, paired with whatever background token it's meant to sit on,
+still meets a minimum contrast ratio. A color rename or a "just nudge the brand blue
+slightly" edit can silently break accessibility with zero signal until a manual audit
+catches it.
+
+### Dependencies
+Requires Phase 1 (the reference model — pairing rules need to know which tokens are
+"foreground on background" pairs) and pairs naturally with Phase 4 (this is a
+`validate-tokens.mjs` extension, run in the same CI step).
+
+### Data model
+New optional per-token metadata, additive to the existing `DesignToken` shape:
+```ts
+// design-tokens.json, per color token — entirely optional, absence = "not checked"
+$extensions?: {
+  'design-sync.contrastPairs'?: string[]; // refKeys of background tokens this color is expected to sit on
+  'design-sync.contrastMinimum'?: number; // override the default 4.5:1, e.g. 3:1 for large text/UI components
+}
+```
+Populated manually at first (a designer annotates known text/background pairs — e.g.
+`color/text/default` gets `contrastPairs: ["color/surface/default"]`); auto-inference is
+a plausible future enhancement, not required for v1.
+
+### Algorithm
+1. `scripts/check-contrast.mjs` (new), invoked from `ci.yml` after `validate-tokens.mjs`:
+   for every color token carrying `contrastPairs`, resolve both sides (Phase 1's
+   `resolveToken`), compute WCAG relative-luminance contrast ratio.
+2. Compare against the configurable minimum (default 4.5:1, WCAG AA normal text).
+3. A failing pair does not hard-fail CI by default (genuine, intentional low-contrast
+   decorative tokens exist) — it posts a warning annotation on the PR via GitHub's
+   checks API. A repo can opt into hard-fail via a workflow input flag.
+
+### UI changes
+Sync tab: a conflict/added row for a color token with `contrastPairs` that would fail
+shows an inline `WarningCircle` badge next to the value (e.g. "2.1:1 — below AA")
+*before* the PR is even opened, using the same client-side contrast math already
+available to `ui.ts` — no new dependency.
+
+### Acceptance criteria
+- A token change that drops a documented pair below its configured minimum surfaces a
+  warning both in the Sync tab (pre-PR) and as a PR annotation (post-PR), with the
+  actual computed ratio.
+- A pair that already failed before the change (pre-existing debt) does not falsely
+  read as "caused by this sync" — compare against the previous commit's ratio to
+  distinguish newly-introduced/newly-worsened failures from an existing baseline.
+
+### Rejected alternatives
+- **Auto-block sync entirely on any contrast failure.** Rejected: too strict as a
+  default — real, intentional low-contrast UI exists (disabled states, decorative
+  elements); a hard block would train teams to route around the tool. Opt-in strict
+  mode covers teams that want enforcement.
+- **Auto-fix by adjusting the failing color's lightness until it passes.** Rejected:
+  silently mutating a designer's chosen value without their input is worse than a
+  flagged warning — the same "no default resolution" principle Phase 7 also respects.
+
+---
+
+## 15. Phase 14 — Token deprecation lifecycle
+
+**Status**: ❌ Not started (new, proposed 2026-08-05). **Priority**: Unprioritized.
+
+### Goal
+Let a token be marked deprecated with a sunset date and a migration hint, instead of the
+only two states being "exists" and "silently deleted," so downstream consumers get a
+warning window rather than a breaking change.
+
+### Problem addressed
+Removing a token today just makes it disappear from the next diff as a GitHub-only or
+Figma-only removal. Anything still hardcoding or referencing that token's value in
+application code has no signal at all until something visually breaks — there's no
+concept of "this is going away soon, please migrate."
+
+### Dependencies
+Requires Phase 1 (deprecation metadata lives in `$extensions`, same mechanism as Phase
+2's `variableId`/`modeId`). Strongly complements Phase 11 (drift detection) — a
+deprecated token is exactly what a drift scanner should flag with elevated urgency once
+both exist — but this phase stands alone without Phase 11.
+
+### Data model
+```ts
+// Additive to DesignToken<T>['$extensions']
+'design-sync.deprecated'?: {
+  since: string;        // ISO date, set automatically when first marked
+  sunset?: string;       // ISO date, optional — "should be gone by"
+  replacement?: string;  // refKey of the token to migrate to, if a direct 1:1 replacement exists
+  reason?: string;       // free text, e.g. "superseded by color/brand/primary-v2"
+};
+```
+
+### Algorithm
+1. Sync tab gains a per-token "Mark as deprecated" action (a small overflow affordance
+   next to the existing resolution controls, available on any unchanged or resolved
+   token) — sets the metadata above, written through the existing GitHub-write path (no
+   new API surface, just a new field in the same JSON write Sync already does).
+2. `validate-tokens.mjs` (Phase 4) gains a check: any non-deprecated token still
+   referencing (via Phase 1's reference model) a token that IS deprecated surfaces as a
+   lint warning ("X still references deprecated Y") — catches internal drift within the
+   token set itself, independent of application code.
+3. Status tab gains a "Deprecated tokens" summary (collapsed by default, matching every
+   other progressive-disclosure pattern already shipped) — count deprecated, count past
+   sunset date.
+
+### UI changes
+Sync tab's diff rows, Status tab's new deprecated-tokens summary, and a muted
+"Deprecated" `.tag` (reusing the existing tag component) anywhere a deprecated token's
+key is shown.
+
+### Acceptance criteria
+- Marking a token deprecated round-trips correctly through a sync (metadata survives
+  Figma write-back and the next GitHub read).
+- A token referencing a deprecated token is flagged by `validate-tokens.mjs`.
+- The Status tab's deprecated count accurately reflects both total-deprecated and
+  past-sunset-date subsets.
+
+### Rejected alternatives
+- **Hard-delete-with-grace-period (token still resolves but throws a build-time error
+  after the sunset date).** Rejected as too aggressive for v1 — a soft warning-only
+  lifecycle establishes the pattern and metadata first; enforcement can layer on once
+  teams trust the mechanism.
+- **Storing deprecation state outside the token file (e.g. a separate
+  `deprecations.json`).** Rejected: keeping it inline via `$extensions` means it
+  round-trips through the exact same read/write/diff path every other piece of token
+  metadata already uses — no new file, no new sync logic.
+
+---
+
+## 16. Phase 15 — Pre-sync blast-radius preview
+
+**Status**: ❌ Not started (new, proposed 2026-08-05). **Priority**: Unprioritized —
+and blocked on Phase 11 regardless of independent prioritization.
+
+### Goal
+Before opening a sync PR, show how many components/files across which application
+repositories actually consume the token(s) being changed — turning "I hope this doesn't
+break anything" into a concrete, visible number.
+
+### Problem addressed
+Even with a clean Figma↔GitHub diff and a passing contrast check (Phase 13), a token
+change's real-world impact is invisible until Phase 11's drift scanner runs *after* the
+fact (or someone changes it and finds out in production). There's no pre-sync signal
+analogous to "this PR touches 340 files" that a git-based blast-radius tool would show
+for code.
+
+### Dependencies
+Requires Phase 11 (drift detection) — this phase is explicitly a consumer of Phase 11's
+reverse index (value/token → source-file usage across app repos), not a new scanning
+mechanism of its own. **Do not build this before Phase 11 exists** — it would mean
+building and discarding a duplicate indexing mechanism. Also benefits from Phase 10
+(backend), since the reverse index is most naturally served from the same store Phase
+11 populates, though a read-only file-based fallback (a committed `usage-index.json`
+regenerated by the same CI job Phase 11 already runs) is possible without a full backend.
+
+### Files touched
+`ui.ts` (Sync tab) only, on the plugin side — zero new scanning infrastructure, purely a
+UI consumer of Phase 11's existing output.
+
+### Algorithm
+1. When rendering a conflict/modified row, look up the token's key against Phase 11's
+   usage index (via the backend API if Phase 10 exists, or the committed
+   `usage-index.json` otherwise).
+2. If matches exist, show a compact badge: "Used in 12 files across 3 repos" —
+   expandable (same `persistentDetails` pattern as every other disclosure in this app)
+   to a file-path/repo-name list.
+3. No new decision is introduced — informational only, the same "better information,
+   not a different decision" principle Phase 7 already establishes for its own
+   suggestions.
+
+### UI changes
+A new badge/expandable list on `renderDiffRow`, visually similar to the existing REF
+badge (`diffValueLine`) — reuses the existing `.tag`/`persistentDetails` components, no
+new visual language.
+
+### Acceptance criteria
+- A token with known application-code usage shows an accurate count and file list in
+  the Sync tab before the PR is opened.
+- A token with zero detected usage shows no badge at all (silence is the correct signal
+  for "nothing found," consistent with every other empty-state decision this app makes
+  — not a "0 usages" badge).
+- The index lookup adds no noticeable latency to the existing compare flow (a
+  stale/cached index is acceptable — this is advisory, not a live scan).
+
+### Rejected alternatives
+- **Running a live, on-demand scan of every consuming repo at compare time instead of
+  reading a precomputed index.** Rejected: far too slow at this project's own
+  demonstrated scale (11,600+ token entries, per README §10) and duplicates Phase 11's
+  own scanning infrastructure for no benefit.
+
+---
+
+## 17. Phase 16 — Concurrent-sync advisory lock
+
+**Status**: ❌ Not started (new, proposed 2026-08-05). **Priority**: Unprioritized.
+
+### Goal
+Warn a user, before they open a new sync PR, if another sync PR against the same branch
+is already open — closing the documented "no conflict detection between two open sync
+PRs" gap without requiring Phase 10's backend.
+
+### Problem addressed
+The README's own known-limitations list states this plainly: "If two people sync around
+the same time, each gets their own branch/PR; the second one to merge hits GitHub's
+normal merge-conflict handling... nothing here coordinates or warns ahead of time." This
+phase adds the warning, not the coordination — a lightweight advisory, not a lock in the
+database sense (there's no backend to hold a real lock yet).
+
+### Dependencies
+Requires Phase 3 (PR-based sync) only — a read-only check against GitHub's own PR-list
+API, no new infrastructure, no dependency on Phase 5, 9, or 10.
+
+### Algorithm
+1. Before rendering the Sync tab's "Sync" button as enabled, `ui.ts` calls
+   `GET /repos/{owner}/{repo}/pulls?state=open`, filtered client-side for the
+   `design-sync/sync-` branch-name prefix Phase 3 already uses, to check for any other
+   currently-open sync PR against the same target branch.
+2. If found: a non-blocking `statusBanner('info', …)` above the Sync button — "Another
+   sync PR (#N, opened by X) is already open against this branch — merge or close it
+   first to avoid a conflict," with a `prLink` to the existing PR. The Sync button stays
+   enabled — advisory, not a hard block, since a user might have a legitimate reason to
+   proceed (e.g. two genuinely independent, non-overlapping brand token subsets).
+3. Runs as part of the existing `runCompare()` flow — one extra GitHub call, same PAT,
+   no new permission beyond the `pull_requests: read` scope Phase 3 already requires.
+
+### UI changes
+One new conditional `statusBanner` on the Sync tab, reusing the exact existing
+component — no new UI primitive.
+
+### Acceptance criteria
+- Opening the Sync tab while another sync PR is genuinely open against the same branch
+  shows the advisory banner with an accurate PR link.
+- The banner does not appear when the only open PR is the current session's own
+  just-opened one (compare by branch name, not just "any open PR exists").
+- The Sync button remains clickable throughout — this phase only adds information,
+  consistent with the project's standing principle that automation informs, it doesn't
+  override, human decisions.
+
+### Rejected alternatives
+- **A real distributed lock (blocking a second sync outright until the first
+  resolves).** Rejected: requires a backend to hold lock state reliably (Phase 10), and
+  blocking outright removes a legitimate use case (independent non-overlapping changes)
+  for a problem GitHub's normal merge-conflict handling already resolves safely, per the
+  README's own framing — just not proactively.
+
+---
+
+## 18. Phase 17 — Deep-linking between Storybook/status page and Figma
+
+**Status**: ❌ Not started (new, proposed 2026-08-05). **Priority**: Unprioritized.
+
+### Goal
+From a token's rendering in Storybook (or a future status page), jump directly to the
+Figma node/style/variable that defines it — closing the design↔code loop in the
+direction that currently has no path at all.
+
+### Problem addressed
+Going from Figma → code is well-supported today (that's the entire sync mechanism).
+Going the other way — "this token looks wrong in Storybook, where does it actually live
+in Figma?" — requires manually searching Figma's styles/variables panel by name. For a
+large file (this project's own 11,600+ token case), that's a real, current pain point
+with zero tooling support.
+
+### Dependencies
+Requires Phase 1 (the `$extensions['design-sync.variableId']`/`modeId` fields, already
+populated for variable-backed tokens by Phase 2 — this phase only adds a *link*, no new
+data capture) and Phase 4 (Storybook build — the link needs to render somewhere in the
+built output).
+
+### Algorithm
+1. Figma's own node/variable deep-link scheme
+   (`https://figma.com/design/{fileKey}/{fileName}?node-id={nodeId}` for styles; a
+   comparable scheme exists for variables via the variables panel) is already public —
+   no new Figma API access needed beyond what's already read.
+2. `code.ts`'s existing token-read path already captures `figma.fileKey` alongside each
+   token's `$extensions['design-sync.variableId']` — sufficient to construct a
+   variable-scoped deep link at read time, stored as a new optional
+   `$extensions['design-sync.figmaLink']` field, written on every sync (a derived,
+   always-regenerated field, not something a user edits directly).
+3. Storybook's existing token-documentation view renders this link as a small "Open in
+   Figma" affordance next to each token, opening in a new tab.
+
+### UI changes
+Storybook only (the `design-tokens` repo's Storybook config, not the plugin) — a new
+column/icon-link in whatever token-documentation view Storybook already renders from
+`design-tokens.json`.
+
+### Acceptance criteria
+- A variable-backed token's Storybook entry links to a Figma URL that, when opened by
+  someone with file access, lands on (or very near) the correct variable.
+- A Style-backed token (no `variableId`) either omits the link or falls back to a
+  file-level (not node-level) link, since Figma's deep-link scheme for Styles is less
+  precise than for Variables — document this precision gap plainly rather than showing
+  a misleading link.
+
+### Rejected alternatives
+- **Building this as a plugin-side feature (a "copy Figma link" button in the plugin)
+  instead of surfacing it in Storybook.** Rejected: the whole point is closing the loop
+  for someone who is *already looking at Storybook* and has never opened the plugin —
+  putting the link only in the plugin doesn't solve that person's actual problem.
+
+---
+
+## 19. Cross-phase dependency graph
 
 ```
 Phase 1 (token model) ───────┬──────────────────────────────────────────┐
-                              │                                          │
-Phase 2 (Variable write-back)│    Phase 6 (multi-brand) ──┐             │
+   [SHIPPED]                 │                                          │
+                              │    Phase 6 (multi-brand) ──┐             │
+Phase 2 (Variable write-back)│       [LOWEST PRIORITY]      │             │
    (needs Phase 1)           │                             │             │
-                              │                             ▼             ▼
-Phase 3 (PR-based sync) ─────┤                     Phase 10 (backend) ──► Phase 11 (drift detection)
-                              │                        (needs 5, 6)         (needs 1, 10)
-Phase 4 (CI/CD) ─────────────┤                             ▲
-   (pairs with 3)            │                             │
-                              │    Phase 5 (audit/rollback) ┘
-Phase 7 (AI diff) ────────────┘       (pairs with 3)
-   (needs Phase 1)                        │
-                                            ▼
-                                   Phase 9 (notifications)
-                                      (needs Phase 5)
+   [SHIPPED]                 │                             ▼             ▼
+                              │                     Phase 10 (backend) ──► Phase 11 (drift detection)
+Phase 3 (PR-based sync) ─────┤                        (needs 5, 6)         (needs 1, 10)
+   [SHIPPED]                 │                     [MEDIUM — NOT NOW]      [BLOCKED on 10]
+                              │                             ▲
+Phase 4 (CI/CD) ─────────────┤                             │                    │
+   (pairs with 3)            │    Phase 5 (audit/rollback) ┘                    ▼
+   [SHIPPED]                 │       (pairs with 3)                   Phase 15 (blast-radius preview)
+                              │       [SHIPPED]                          (needs 11)
+Phase 7 (AI diff) ────────────┘            │                             [UNPRIORITIZED, blocked]
+   (needs Phase 1)                          ▼
+   [MEDIUM — NOT NOW]               Phase 9 (notifications)
+                                       (needs Phase 5)
+                                       [PARTIAL — notifications shipped,
+                                        status page shipped then reverted]
+                                            │
+                                            ▼ (same audit-log event source)
+                                   Phase 16 (concurrent-sync lock)
+                                      (needs Phase 3 only)
+                                      [UNPRIORITIZED]
 
-Phase 8 (cross-platform) — needs Phase 1, otherwise independent of everything else.
+Phase 8 (cross-platform) — needs Phase 1, otherwise independent. [LOWEST PRIORITY]
+
+Phase 12 (PR previews) — needs Phase 3 + Phase 4. [UNPRIORITIZED]
+Phase 13 (contrast lint) — needs Phase 1, pairs with Phase 4. [UNPRIORITIZED]
+Phase 14 (deprecation lifecycle) — needs Phase 1, complements Phase 11. [UNPRIORITIZED]
+Phase 17 (Figma deep-links) — needs Phase 1 + Phase 4. [UNPRIORITIZED]
 ```
 
-## 14. Suggested build order
+## 20. Suggested build order
 
-1. **Phase 1** — foundation, everything downstream benefits from or requires it.
-2. **Phase 4** — cheapest phase relative to its reliability payoff; no plugin code
-   changes at all, pure CI addition on top of the existing marker mechanism.
-3. **Phase 3** — governance, and the natural trigger point for Phase 4's PR-time
-   validation.
-4. **Phase 5** — audit trail, now that PR-based sync (3) gives it a clean merge-time
-   hook.
-5. **Phase 2** — Variable write-back; independent of 2–5 above but meaningfully harder,
-   sequenced after the lower-risk phases are stable so the team has full context on the
-   codebase before tackling the trickiest write path.
-6. **Phase 9** — notifications, directly on top of Phase 5's log.
-7. **Phase 6** — multi-brand; valuable but not blocking anything else, good mid-roadmap
-   phase once single-connection flows are rock solid.
-8. **Phase 8** — cross-platform distribution; independent, can slot in whenever
-   native-platform demand justifies it.
-9. **Phase 7** — AI-assisted diff; highest payoff once token sets are large (post
-   multi-brand), and benefits from Phase 1's reference model being battle-tested.
-10. **Phase 10** — backend/platform layer; the capstone, only once the org has
-    genuinely outgrown file-based state.
-11. **Phase 11** — drift detection; deliberately last, since it depends on both Phase 1
-    and Phase 10 being solid.
+Reflects the 2026-08-05 priority decisions above — phases marked Lowest/Medium/Blocked
+are listed for completeness, not as a recommendation to pick them up now.
+
+**Shipped** (for reference, not re-sequencing): Phase 1 → Phase 4 → Phase 3 → Phase 5 →
+Phase 2 → Phase 9 (notifications half only).
+
+**If/when work resumes**, in dependency-respecting order:
+
+1. **Phase 16 (concurrent-sync advisory lock)** — needs only Phase 3 (shipped), cheapest
+   remaining phase relative to payoff: closes a real, documented known-limitation with
+   one read-only API call and one banner, no new infrastructure.
+2. **Phase 12 (PR preview builds)** — needs Phase 3 + 4 (both shipped), pure CI addition,
+   no plugin code changes required for a v1 (the PR comment alone suffices).
+3. **Phase 13 (contrast/accessibility linting)** — needs Phase 1 (shipped), pairs
+   directly with the existing `validate-tokens.mjs` CI step.
+4. **Phase 14 (token deprecation lifecycle)** — needs Phase 1 (shipped), stands alone
+   without Phase 11 but is most valuable once Phase 11 exists.
+5. **Phase 17 (Figma deep-linking)** — needs Phase 1 + 4 (both shipped), Storybook-only
+   change, zero plugin-side risk.
+6. **Phase 6 (multi-brand)** — currently **lowest priority, no known use case**. Only
+   pick this up if a genuine multi-brand/multi-repo need materializes.
+7. **Phase 8 (cross-platform/Style Dictionary)** — currently **lowest priority, no known
+   use case**. Only pick this up if native-platform (iOS/Android) demand shows up.
+8. **Phase 7 (AI-assisted diff)** — currently **medium, not now**. Highest payoff once
+   token sets are large (post multi-brand) — revisit once Phase 6 is either done or
+   confirmed permanently out of scope.
+9. **Phase 10 (backend/platform layer)** — currently **medium, not now**. The capstone;
+   revisit only once file/CI-based state genuinely stops scaling for the org.
+10. **Phase 11 (drift detection)** — blocked on Phase 10. Not actionable until Phase 10
+    is picked back up.
+11. **Phase 15 (blast-radius preview)** — blocked on Phase 11 (and therefore transitively
+    on Phase 10). Last in the chain by construction.
 
 ---
 
