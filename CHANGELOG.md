@@ -9,6 +9,26 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.16.0] - 2026-08-05
+
+### Changed
+- **History tab redesign — fourth and last tab in the tab-by-tab IA
+  pass.** Every past sync entry always rendered its full before→after
+  change list inline, so a handful of history entries (or one large
+  sync) turned the tab into a long unbroken scroll. Each entry's change
+  list now collapses into a `persistentDetails` accordion, closed by
+  default (unlike Sync's log or Status's diff table, there's no
+  principled "needs attention" default here — every entry is equally
+  past), with the change count moved into the accordion summary instead
+  of a separate always-visible badge. Timestamp/actor, the PR link, and
+  the "Revert this sync" button all stay visible outside the accordion —
+  revert shouldn't require expanding the detail first. "Load history"
+  also gains an icon, matching every other fetch-style button in the app.
+
+This closes out the tab-by-tab redesign pass started in v1.13.0 — all
+five tabs now follow the same icon-forward, progressive-disclosure
+direction.
+
 ## [1.15.0] - 2026-08-05
 
 ### Changed

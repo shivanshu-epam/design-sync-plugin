@@ -2338,6 +2338,7 @@ function renderHistoryTab(): HTMLElement {
   }
 
   const loadBtn = el('button', { className: 'primary' }, loadingLabel(state.auditLogLoading, 'Loading…', 'Load history'));
+  if (!state.auditLogLoading) loadBtn.prepend(icon('ArrowsClockwise', undefined, 13));
   if (state.auditLogLoading) loadBtn.setAttribute('disabled', 'true');
   loadBtn.onclick = () => loadAuditLog();
   container.appendChild(el('div', { className: 'btn-row' }, [loadBtn]));
@@ -2368,17 +2369,16 @@ function renderHistoryTab(): HTMLElement {
     const canRevert = canRevertEntry(entry);
     const reverting = state.reverting === entry.timestamp;
     const item = el('div', { className: 'diff-row' });
-    item.appendChild(
-      el('div', { className: 'diff-key' }, [
-        `${new Date(entry.timestamp).toLocaleString()} — ${entry.actor}`,
-        el('span', { className: 'diff-badge' }, [`${entry.changes.length} change${entry.changes.length === 1 ? '' : 's'}`]),
-      ]),
-    );
+    item.appendChild(el('div', { className: 'diff-key' }, [`${new Date(entry.timestamp).toLocaleString()} — ${entry.actor}`]));
     item.appendChild(el('p', { className: 'hint' }, [prLink(entry.prUrl, entry.prNumber)]));
 
-    const details = el('div', { className: 'diff-values' });
-    for (const c of entry.changes) details.appendChild(renderAuditChangeRow(c));
-    item.appendChild(details);
+    const changesDetails = persistentDetails(`history-changes-${entry.timestamp}`, false, 'setup-guide', [
+      `${entry.changes.length} change${entry.changes.length === 1 ? '' : 's'}`,
+    ]);
+    const changesBody = el('div', { className: 'diff-values' });
+    for (const c of entry.changes) changesBody.appendChild(renderAuditChangeRow(c));
+    changesDetails.appendChild(changesBody);
+    item.appendChild(changesDetails);
 
     const controls = el('div', { className: 'resolution-controls' });
     const revertBtn = el(
