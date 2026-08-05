@@ -108,6 +108,7 @@
   .icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; line-height: 0; }
   .icon svg { display: block; }
   .icon.spin svg { animation: icon-spin 0.9s linear infinite; }
+  .icon.info-hint { color: var(--text-muted); cursor: help; align-self: center; }
   @keyframes icon-spin { to { transform: rotate(360deg); } }
 
   header.app-header { flex-shrink: 0; background: var(--chrome-bg); }
@@ -201,7 +202,11 @@
   button.cta:hover:not(:disabled) { background: var(--cta-hover); border-color: var(--cta-hover); }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   button + button { margin-left: 6px; }
-  .btn-row { margin-top: 10px; display: flex; }
+  /* gap handles spacing (buttons, and now also tags/icons mixed in) —
+     button + button's margin-left would double up with it, so it's reset
+     to 0 here rather than stacking. */
+  .btn-row { margin-top: 10px; display: flex; align-items: center; gap: 8px; }
+  .btn-row > button + button { margin-left: 0; }
   /* Native <input list> + <datalist> is unreliable inside a Figma plugin's
      sandboxed iframe — the browser-native popup would silently vanish as
      soon as the user kept typing or the input regained focus. Rendered by
@@ -289,6 +294,7 @@
      gets its own full-width line with a colored label chip, stacked
      vertically, at a size that's actually comfortable to read. */
   .diff-group { margin-bottom: 16px; }
+  .diff-group h2 { display: flex; align-items: center; gap: 8px; }
   .diff-row { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 11px; margin-bottom: 8px; background: var(--surface); }
   .diff-row.status-added-figma { border-left: 3px solid var(--cta); }
   .diff-row.status-added-github { border-left: 3px solid var(--accent); }
@@ -340,6 +346,23 @@
   .diff-value-line .diff-badge { flex-shrink: 0; white-space: nowrap; align-self: center; }
   .resolution-controls { display: flex; flex-wrap: wrap; gap: 4px 14px; }
   .resolution-controls label { font-weight: 500; font-size: 12px; }
+  /* Segmented icon-button toggle replacing 3 radio+label pairs per conflict
+     row — one joined group instead of 3 separately-bordered controls. */
+  .resolution-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .resolution-toggle button {
+    margin: 0;
+    padding: 5px 9px;
+    border: none;
+    border-right: 1px solid var(--border);
+    border-radius: 0;
+    background: var(--surface);
+    color: var(--text-muted);
+  }
+  .resolution-toggle button:last-child { border-right: none; }
+  .resolution-toggle button:hover:not(:disabled) { background: var(--bg-subtle); color: var(--text); }
+  .resolution-toggle button.active.figma { background: var(--cta); color: #ffffff; }
+  .resolution-toggle button.active.github { background: var(--accent); color: #ffffff; }
+  .resolution-toggle button.active.skip { background: var(--text-muted); color: var(--surface); }
 
   .audit-change-row {
     padding: 6px 0;

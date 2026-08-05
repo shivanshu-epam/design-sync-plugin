@@ -1290,10 +1290,12 @@ function renderSyncTab(): HTMLElement {
     return container;
   }
 
-  const compareBtn = el('button', {
-    className: 'primary',
-    textContent: state.comparing ? 'Comparing…' : state.diff.length ? 'Re-fetch & compare' : 'Fetch & compare',
-  });
+  const compareBtn = el(
+    'button',
+    { className: 'primary' },
+    loadingLabel(state.comparing, 'Comparing…', state.diff.length ? 'Re-fetch & compare' : 'Fetch & compare'),
+  );
+  if (!state.comparing) compareBtn.prepend(icon('ArrowsClockwise', undefined, 13));
   if (state.comparing) compareBtn.setAttribute('disabled', 'true');
   compareBtn.onclick = () => runCompare();
   container.appendChild(el('div', { className: 'btn-row' }, [compareBtn]));
@@ -1320,42 +1322,41 @@ function renderSyncTab(): HTMLElement {
 
       if (addedCount > 0) {
         const selectRow = el('div', { className: 'btn-row' });
-        const selectAll = el('button', { className: 'primary', textContent: `Select all (${addedCount} new)` });
+        const selectAll = el('button', { className: 'primary' }, ['Select all']);
         selectAll.onclick = () => {
           for (const d of changed) {
             if (d.status !== 'modified') delete state.resolutions[`${d.category}:${d.key}`];
           }
           render();
         };
-        const selectNone = el('button', { textContent: 'Deselect all' });
+        const selectNone = el('button', {}, ['Deselect all']);
         selectNone.onclick = () => {
           for (const d of changed) {
             if (d.status !== 'modified') state.resolutions[`${d.category}:${d.key}`] = 'skip';
           }
           render();
         };
-        selectRow.append(selectAll, selectNone);
+        const countTag = el('span', { className: 'tag' }, [`${addedCount} new`]);
+        const infoIcon = icon('Info', 'info-hint', 12);
+        infoIcon.title = 'New tokens (from either side) are included by default — uncheck individual rows below, or use these to bulk-select.';
+        selectRow.append(selectAll, selectNone, countTag, infoIcon);
         container.appendChild(selectRow);
-        container.appendChild(
-          el('p', { className: 'hint' }, [
-            'New tokens (from either side) are included by default — uncheck individual rows below, or use these to bulk-select.',
-          ]),
-        );
       }
 
       if (conflictCount > 0) {
         const bulkRow = el('div', { className: 'btn-row' });
-        const useAllFigma = el('button', { textContent: 'Use all Figma (conflicts)' });
+        const useAllFigma = el('button', {}, [icon('FigmaLogo', undefined, 12), 'Use all Figma']);
         useAllFigma.onclick = () => {
           for (const d of changed) if (d.status === 'modified' && !d.cascadeOnly) state.resolutions[`${d.category}:${d.key}`] = 'figma';
           render();
         };
-        const useAllGithub = el('button', { textContent: 'Use all GitHub (conflicts)' });
+        const useAllGithub = el('button', {}, [icon('GithubLogo', undefined, 12), 'Use all GitHub']);
         useAllGithub.onclick = () => {
           for (const d of changed) if (d.status === 'modified' && !d.cascadeOnly) state.resolutions[`${d.category}:${d.key}`] = 'github';
           render();
         };
-        bulkRow.append(useAllFigma, useAllGithub);
+        const countTag = el('span', { className: 'tag' }, [`${conflictCount} conflict${conflictCount === 1 ? '' : 's'}`]);
+        bulkRow.append(useAllFigma, useAllGithub, countTag);
         container.appendChild(bulkRow);
       }
 
@@ -1363,7 +1364,7 @@ function renderSyncTab(): HTMLElement {
         const rows = changed.filter((d) => d.category === category).sort((a, b) => diffRowPriority(a) - diffRowPriority(b));
         if (rows.length === 0) continue;
         const group = el('div', { className: 'diff-group' });
-        group.appendChild(el('h2', {}, [category]));
+        group.appendChild(el('h2', {}, [category, el('span', { className: 'tag' }, [String(rows.length)])]));
         // cascadeOnly rows have nothing to decide (see 1.4.2) — clicking any
         // button on them is a no-op, so showing each one at full size just
         // pads out the list a reviewer actually has to scroll through.
@@ -1394,6 +1395,7 @@ function renderSyncTab(): HTMLElement {
         },
         loadingLabel(state.syncing, 'Opening pull request…', 'Sync (open PR & update Figma)'),
       );
+      if (!state.syncing) syncBtn.prepend(icon('ArrowsLeftRight', undefined, 13));
       if (blocked) syncBtn.setAttribute('disabled', 'true');
       syncBtn.onclick = () => runSync();
       container.appendChild(el('div', { className: 'btn-row' }, [syncBtn]));
@@ -1405,7 +1407,16 @@ function renderSyncTab(): HTMLElement {
     }
   }
 
-  container.appendChild(el('pre', { id: 'log', textContent: state.log.join('\n') }));
+  if (state.log.length > 0) {
+    // `defaultOpen: true` only applies the first time this id is ever seen
+    // (persistentDetails) — which is the first render after a compare/sync
+    // has actually started logging something, so it opens right when there's
+    // something to watch. Once the user closes it, that choice persists
+    // across the rest of this run and any future one.
+    const logDetails = persistentDetails('sync-log', true, 'setup-guide', [icon('Pulse', undefined, 13), 'Activity log']);
+    logDetails.appendChild(el('pre', { id: 'log', textContent: state.log.join('\n') }));
+    container.appendChild(logDetails);
+  }
   return container;
 }
 
@@ -1461,22 +1472,21 @@ function renderDiffRow(d: DiffEntry): HTMLElement {
   if (d.status === 'modified') {
     const resKey = `${d.category}:${d.key}`;
     const current = state.resolutions[resKey];
-    const controls = el('div', { className: 'resolution-controls' });
-    for (const [value, text] of [
-      ['figma', 'Use Figma'],
-      ['github', 'Use GitHub'],
-      ['skip', 'Skip'],
-    ] as [Resolution, string][]) {
-      const id = `${resKey}:${value}`;
-      const radio = el('input', { type: 'radio', name: resKey, id, checked: current === value });
-      radio.onchange = () => {
+    const toggle = el('div', { className: 'resolution-toggle' });
+    for (const [value, cls, label, iconName] of [
+      ['figma', 'figma', 'Use Figma', 'FigmaLogo'],
+      ['github', 'github', 'Use GitHub', 'GithubLogo'],
+      ['skip', 'skip', 'Skip', 'XCircle'],
+    ] as [Resolution, string, string, IconName][]) {
+      const btn = el('button', { type: 'button', className: cls, title: label }, [icon(iconName, undefined, 12)]);
+      if (current === value) btn.classList.add('active');
+      btn.onclick = () => {
         state.resolutions[resKey] = value;
         render();
       };
-      const label = el('label', { htmlFor: id }, [radio, ` ${text}`]);
-      controls.appendChild(label);
+      toggle.appendChild(btn);
     }
-    row.appendChild(controls);
+    row.appendChild(toggle);
   } else if (d.status === 'added-figma' || d.status === 'added-github') {
     const resKey = `${d.category}:${d.key}`;
     // Included by default (no resolution stored at all) — this checkbox is

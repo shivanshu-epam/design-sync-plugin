@@ -9,6 +9,31 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.14.0] - 2026-08-05
+
+### Changed
+- **Sync tab redesign — second tab in the tab-by-tab IA pass.** Same
+  progressive-disclosure/icon-forward direction as Connect:
+  - **Fetch & compare** and **Sync** buttons gain icons (`ArrowsClockwise`,
+    `ArrowsLeftRight`) instead of being plain text.
+  - **Bulk action rows** ("Select all"/"Deselect all", "Use all Figma"/
+    "Use all GitHub") drop their counts from the button text into a `.tag`
+    pill next to the buttons, and the explanatory sentence about new-token
+    default-include behavior is now an `Info` icon with a tooltip instead
+    of a permanent paragraph. Both bulk buttons also gain a `FigmaLogo`/
+    `GithubLogo` icon.
+  - **Category headers** (`Colors`, `Typography`, …) gain a trailing count
+    tag instead of the count only showing up per-row.
+  - **Per-row conflict resolution** — the 3 radio+label pairs ("Use
+    Figma"/"Use GitHub"/"Skip") are replaced with a compact segmented
+    icon-button toggle (`.resolution-toggle`), color-matched to each
+    source the same way `diff-value-label.figma`/`.github` already are.
+  - **Activity log** — the always-visible `<pre>` trace of sync/compare
+    steps is now a `persistentDetails` accordion ("Activity log"), open by
+    default the first time there's something to show and respecting
+    whatever the user sets afterward; skipped entirely when there's
+    nothing logged yet.
+
 ## [1.13.1] - 2026-08-05
 
 ### Fixed
