@@ -88,21 +88,28 @@ even against an out-of-date `design-tokens.json`.
 - **Connect** tab — GitHub owner/repo/branch/file path + a personal access
   token, stored locally via `figma.clientStorage` (never sent anywhere
   except `api.github.com`). See [GitHub token](#github-token) for the
-  scopes it needs. A "Find repository" search field (native `<datalist>`
-  type-ahead) lists every repo the token can see and auto-fills
-  owner/name/branch on selection, so owner/repo don't need to be typed
-  by hand — manual entry still works too.
+  scopes it needs. A "Find repository" search field (hand-rendered
+  dropdown, filtered as you type — not a native `<input list>`/`<datalist>`,
+  which turned out to be unreliable inside the plugin's sandboxed iframe)
+  lists every repo the token can see and auto-fills owner/name/branch on
+  selection, so owner/repo don't need to be typed by hand — manual entry
+  still works too. Once connected, the form collapses into a compact
+  status card (`owner/repo · branch`, Edit/Test actions); editing
+  re-expands it, pre-filled.
 - **Custom Tokens** tab — key/value editor for dimension tokens (spacing,
   radii, etc.), persisted in the Figma file itself.
 - **Sync** tab — fetches current Figma tokens and the GitHub JSON file,
   diffs them per key (added in Figma / added in GitHub / conflicting), and
-  requires an explicit resolution (Use Figma / Use GitHub / Skip) for every
-  conflict before the "Sync" button unlocks. Syncing opens a **pull
-  request** against the configured branch with the merged token set (a new
-  branch + commit + PR, never a direct commit to that branch — see
-  [PR-based review gate](#pr-based-review-gate)) and applies the
-  GitHub-side resolutions back onto the Figma styles immediately, so
-  Figma reflects the resolution right away even while the PR is pending.
+  requires an explicit resolution (Figma / GitHub / Skip, via a segmented
+  icon-button toggle per conflict) for every conflict before the "Sync"
+  button unlocks. Syncing opens a **pull request** against the configured
+  branch with the merged token set (a new branch + commit + PR, never a
+  direct commit to that branch — see [PR-based review gate](#pr-based-review-gate))
+  and applies the GitHub-side resolutions back onto the Figma styles
+  immediately, so Figma reflects the resolution right away even while the
+  PR is pending. A step-by-step activity log of the run collapses into an
+  accordion below the diff, out of the way once there's nothing new to
+  watch.
 - **Status** tab — three-way Figma↔GitHub↔Storybook health check, plus:
   - A banner for the most recent sync's pull request, if it's still open
     ("pending review — the diff below won't resolve until it merges") or
