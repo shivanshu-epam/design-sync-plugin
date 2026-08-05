@@ -205,7 +205,11 @@
   /* gap handles spacing (buttons, and now also tags/icons mixed in) —
      button + button's margin-left would double up with it, so it's reset
      to 0 here rather than stacking. */
-  .btn-row { margin-top: 10px; display: flex; align-items: center; gap: 8px; }
+  /* margin-bottom mirrors margin-top so a button row sitting directly next
+     to content with no margin of its own (e.g. History's entries list, or
+     Sync's diff groups) doesn't end up flush against it — collapses
+     harmlessly with whatever margin-top the next element already has. */
+  .btn-row { margin-top: 10px; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
   .btn-row > button + button { margin-left: 0; }
   /* Native <input list> + <datalist> is unreliable inside a Figma plugin's
      sandboxed iframe — the browser-native popup would silently vanish as

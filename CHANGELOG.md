@@ -9,6 +9,20 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.16.2] - 2026-08-05
+
+### Fixed
+- **A `.btn-row` (e.g. "Load history", "Fetch & compare") sat flush
+  against whatever followed it whenever nothing with its own margin-top
+  happened to sit in between.** `.btn-row` only had `margin-top`, no
+  `margin-bottom` — it looked fine wherever a banner/hint (which has
+  margin on both sides) happened to come right after, but any button row
+  followed directly by a margin-top-less block (History's entries list
+  when there's no error banner, most commonly) was flush against it.
+  `.btn-row` now has `margin-bottom: 10px` too, mirroring its own
+  margin-top — same fix shape as the `.status-banner` and
+  `.resolution-controls` spacing fixes earlier this pass.
+
 ## [1.16.1] - 2026-08-05
 
 ### Fixed
