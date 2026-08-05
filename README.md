@@ -8,7 +8,8 @@ Figma plugin only — the token schema/validation logic lives in a separate
 shared package (`design-sync-schema`), and the tokens + Storybook live in
 a separate repo (`design-tokens`). See [PROJECT.md](PROJECT.md) for the
 full write-up (problem, architecture, every bug hit building this, setup
-from scratch).
+from scratch), or [Design Sync — How It Works](https://claude.ai/code/artifact/2401fcf7-0662-4870-88aa-53b0d8ca659b)
+for a visual walkthrough of the architecture and the Sync flow.
 
 ## Token sources: Styles + Variables
 
