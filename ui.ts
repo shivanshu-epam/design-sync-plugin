@@ -1690,6 +1690,7 @@ function renderStorybookGuide(): HTMLElement {
   const needsSetup = state.storybookStatus === 'never-built' || state.storybookStatus === 'error' || state.storybookStatus === 'unknown';
 
   const details = persistentDetails('storybook-guide', needsSetup, 'setup-guide', [
+    icon('Info', undefined, 13),
     needsSetup ? 'How to set up Storybook for this repo' : 'How to update Storybook',
   ]);
 
@@ -1743,6 +1744,7 @@ function renderStatusTab(): HTMLElement {
   }
 
   const refreshBtn = el('button', { className: 'primary' }, loadingLabel(state.comparing, 'Checking…', 'Refresh status'));
+  if (!state.comparing) refreshBtn.prepend(icon('ArrowsClockwise', undefined, 13));
   if (state.comparing) refreshBtn.setAttribute('disabled', 'true');
   refreshBtn.onclick = () => runCompare();
   container.appendChild(el('div', { className: 'btn-row' }, [refreshBtn]));
@@ -1788,13 +1790,23 @@ function renderStatusTab(): HTMLElement {
     );
   }
 
-  container.appendChild(el('h2', {}, ['1. Figma ↔ GitHub']));
+  container.appendChild(
+    el('h2', { className: 'status-section-heading' }, [
+      icon('FigmaLogo', undefined, 12),
+      icon('GithubLogo', undefined, 12),
+      'Figma ↔ GitHub',
+      el('span', { className: 'tag' }, [figmaGithubInSync ? 'in sync' : `${outOfSync.length} differ`]),
+    ]),
+  );
   if (figmaGithubInSync) {
     container.appendChild(statusBanner('success', ['Every token matches between Figma and GitHub.']));
   } else {
-    container.appendChild(
-      statusBanner('error', [`${outOfSync.length} token(s) differ — see below.`]),
-    );
+    // First time this id is seen (i.e. the first render where there's
+    // something to show), open by default — same rationale as Sync's
+    // activity log. After that, whatever the user last set persists.
+    const tableDetails = persistentDetails('status-diff-table', true, 'setup-guide', [
+      `${outOfSync.length} token${outOfSync.length === 1 ? '' : 's'} differ`,
+    ]);
     const table = el('table', { className: 'token-table' });
     table.appendChild(
       el('thead', {}, [
@@ -1813,10 +1825,17 @@ function renderStatusTab(): HTMLElement {
       );
     }
     table.appendChild(tbody);
-    container.appendChild(table);
+    tableDetails.appendChild(table);
+    container.appendChild(tableDetails);
   }
 
-  const storybookHeading = el('h2', {}, ['2. GitHub ↔ Storybook']);
+  const storybookHeading = el('h2', { className: 'status-section-heading' }, [
+    icon('Pulse', undefined, 12),
+    'GitHub ↔ Storybook',
+    ...(state.storybookStatus !== 'unknown'
+      ? [el('span', { className: 'tag' }, [state.storybookStatus === 'in-sync' ? 'in sync' : state.storybookStatus])]
+      : []),
+  ]);
   storybookHeading.style.marginTop = '18px';
   container.appendChild(storybookHeading);
   if (state.storybookStatus !== 'unknown') {
@@ -1830,6 +1849,7 @@ function renderStatusTab(): HTMLElement {
     { title: `Checks for a dev server at ${LOCAL_STORYBOOK_URL} and opens it if found. A plugin can't start the server itself — no shell access in either execution context.` },
     loadingLabel(state.checkingLocalStorybook, 'Checking…', 'View Storybook (local)'),
   );
+  if (!state.checkingLocalStorybook) viewBtn.prepend(icon('ArrowSquareOut', undefined, 13));
   if (state.checkingLocalStorybook) viewBtn.setAttribute('disabled', 'true');
   viewBtn.onclick = () => viewLocalStorybook();
   container.appendChild(el('div', { className: 'btn-row' }, [viewBtn]));
@@ -1870,6 +1890,7 @@ function renderStatusTab(): HTMLElement {
     },
     loadingLabel(state.storybookDeploying, 'Triggering…', 'Rebuild Storybook'),
   );
+  if (!state.storybookDeploying) deployBtn.prepend(icon('ArrowsClockwise', undefined, 13));
   if (state.storybookDeploying || deployDisabledReason) deployBtn.setAttribute('disabled', 'true');
   deployBtn.onclick = () => deployStorybook();
   container.appendChild(el('div', { className: 'btn-row' }, [deployBtn]));

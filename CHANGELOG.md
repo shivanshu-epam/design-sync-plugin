@@ -9,6 +9,27 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.15.0] - 2026-08-05
+
+### Changed
+- **Status tab redesign — third tab in the tab-by-tab IA pass.** Same
+  direction as Connect and Sync:
+  - **Refresh status**, **View Storybook (local)**, and **Rebuild
+    Storybook** buttons gain icons (`ArrowsClockwise`, `ArrowSquareOut`,
+    `ArrowsClockwise`) instead of plain text.
+  - **Section headers** ("1. Figma ↔ GitHub", "2. GitHub ↔ Storybook")
+    drop their numeric prefixes for source-logo icons and gain a trailing
+    status `.tag` (`in sync` / `N differ` / the Storybook status), so each
+    section's state reads before any prose does — same pattern as Sync's
+    category headers.
+  - **The Figma↔GitHub diff table** — previously always rendered in full
+    the moment anything was out of sync, the single biggest source of
+    scroll on this tab — now collapses into a `persistentDetails`
+    accordion, open by default the first time there's a mismatch and
+    respecting the user's choice afterward.
+  - `renderStorybookGuide()`'s summary gains an `Info` icon, the last
+    bare-text accordion summary left in the app.
+
 ## [1.14.0] - 2026-08-05
 
 ### Changed
