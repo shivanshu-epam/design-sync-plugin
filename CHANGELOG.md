@@ -9,6 +9,19 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.16.1] - 2026-08-05
+
+### Fixed
+- **History tab: "Revert this sync" sat flush (0px gap) against the
+  change-list accordion above it.** A regression from v1.16.0 — the
+  Revert button used to follow `.diff-values` (`margin-bottom: 8px`), but
+  now follows the collapsed accordion (`details.setup-guide`, which only
+  has `margin-top`, not `margin-bottom`), so there was nothing to create a
+  gap. `.resolution-controls` now carries its own `margin-top: 8px`,
+  which collapses harmlessly with `.diff-values`' existing margin-bottom
+  everywhere else that class is used (Sync's "Include in sync" rows), so
+  this only changes the one spot that was actually broken.
+
 ## [1.16.0] - 2026-08-05
 
 ### Changed

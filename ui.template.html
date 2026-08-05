@@ -347,7 +347,13 @@
   .diff-value-label.github { background: var(--accent); }
   .diff-value-text { color: var(--text); overflow-wrap: anywhere; flex: 1 1 auto; min-width: 0; }
   .diff-value-line .diff-badge { flex-shrink: 0; white-space: nowrap; align-self: center; }
-  .resolution-controls { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  /* margin-top collapses with whatever precedes it — a no-op after
+     .diff-values (already margin-bottom: 8px) but the fix for when a
+     resolution-controls row follows a details.setup-guide instead (e.g.
+     History's Revert button after the collapsed change list), which has
+     margin-top but no margin-bottom of its own and would otherwise sit
+     flush against it. */
+  .resolution-controls { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; }
   .resolution-controls label { font-weight: 500; font-size: 12px; }
   /* Segmented icon-button toggle replacing 3 radio+label pairs per conflict
      row — one joined group instead of 3 separately-bordered controls. */
