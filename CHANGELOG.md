@@ -9,6 +9,41 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.18.0] - 2026-08-05
+
+### Added
+- **Real GitHub Pages deployment status on the Status tab**, replacing
+  v1.17.0's blind link. New `fetchPagesStatus` checks `GET /pages` (and
+  `/pages/builds/latest` for a timestamp) against `api.github.com` —
+  already an allowed domain, no manifest change needed — before ever
+  offering to open a link, so a user can no longer land on a raw GitHub
+  404. "View Storybook (deployed)" now only renders once Pages is
+  confirmed live, using GitHub's own reported URL instead of a guessed
+  one, with a "last deployed" caption. When it isn't (or the check itself
+  fails — most likely a missing PAT scope), a new collapsed "How to
+  enable GitHub Pages" guide takes its place. A confirmed-absent vs.
+  couldn't-confirm distinction is deliberate: a 403 from a missing scope
+  and a genuine 404 both read as "can't confirm," never as a false
+  "definitely not deployed."
+- **New required PAT scope: `Pages: read-only`** — documented in the
+  Connect tab's permissions guide and README's "GitHub token" section,
+  alongside the existing three. Degrades gracefully without it (falls
+  back to the same guide-only view as "not configured").
+
+### Fixed
+- **"Rebuild Storybook" was wrongly disabled whenever CI had run since
+  the last token change**, even though nothing had ever been deployed.
+  Root cause: `.storybook-sync.json`'s marker was written by an automatic
+  npm `postbuild-storybook` hook, firing on *every* `npm run
+  build-storybook` — including `ci.yml`'s validate-only build, which
+  never deploys anywhere. Fixed in the `design-tokens` repo:
+  `record-sync-marker` is no longer an automatic hook; `deploy-
+  storybook.yml` now calls it explicitly, in the `deploy` job, only
+  after `actions/deploy-pages` actually succeeds — so "in sync" now
+  genuinely means "live on Pages," not just "CI built an artifact
+  somewhere." (Companion fix, not in this repo — see the `design-tokens`
+  repo's `0b7e975` for the workflow/script changes.)
+
 ## [1.17.0] - 2026-08-05
 
 ### Added

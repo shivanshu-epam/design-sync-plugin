@@ -149,6 +149,14 @@ const state: {
   storybookDeployError: string | null;
   localStorybookReachable: boolean | null;
   checkingLocalStorybook: boolean;
+  // 'unknown' = not checked yet (or the last check failed/was unauthorized —
+  // deliberately NOT treated the same as "confirmed not configured", so a
+  // missing Pages:read PAT scope reads as "can't tell" rather than a false
+  // "not deployed" claim).
+  pagesStatus: 'unknown' | 'not-configured' | 'configured';
+  pagesUrl: string | null;
+  pagesLastBuildAt: string | null;
+  pagesError: string | null;
   pendingPr: { number: number; url: string; state: 'open' | 'closed' } | null;
   availableRepos: RepoOption[];
   loadingRepos: boolean;
@@ -209,6 +217,10 @@ const state: {
   storybookDeployError: null,
   localStorybookReachable: null,
   checkingLocalStorybook: false,
+  pagesStatus: 'unknown',
+  pagesUrl: null,
+  pagesLastBuildAt: null,
+  pagesError: null,
   pendingPr: null,
   availableRepos: [],
   loadingRepos: false,
@@ -399,8 +411,9 @@ async function fetchGithubTokens(settings: GithubSettings): Promise<{ tokens: To
 
 // .storybook-sync.json is always looked up at the repo root, regardless of
 // where the token file itself lives — it's written by
-// scripts/record-sync-marker.mjs (the build-storybook postbuild hook) in
-// the tokens repo.
+// scripts/record-sync-marker.mjs (explicitly invoked by deploy-storybook.yml
+// after a real Pages deploy succeeds, not an npm postbuild hook — see that
+// script's header comment) in the tokens repo.
 async function fetchStorybookMarker(settings: GithubSettings): Promise<StorybookSyncMarker | null> {
   const res = await githubRequest(
     `/repos/${settings.owner}/${settings.repo}/contents/.storybook-sync.json?ref=${encodeURIComponent(settings.branch)}`,
@@ -415,6 +428,47 @@ async function fetchStorybookMarker(settings: GithubSettings): Promise<Storybook
   }
   const body = await res.json();
   return JSON.parse(decodeBase64Utf8(body.content)) as StorybookSyncMarker;
+}
+
+interface PagesStatus {
+  configured: boolean;
+  url: string | null;
+  lastBuildAt: string | null;
+}
+
+// GET /pages tells us whether GitHub Pages is even enabled for this repo —
+// checked here (against api.github.com, already an allowed domain) instead
+// of just opening https://{owner}.github.io/{repo}/ directly and letting the
+// user hit a raw GitHub 404 page, which is exactly what prompted this. On a
+// private repo this 404s the same way whether Pages is genuinely
+// unconfigured OR the token just lacks the Pages:read scope — those two
+// cases are handled identically at the call site (both read as "can't
+// confirm it's live," never as a false "definitely not deployed").
+async function fetchPagesStatus(settings: GithubSettings): Promise<PagesStatus> {
+  const pagesRes = await githubRequest(`/repos/${settings.owner}/${settings.repo}/pages`, settings);
+  if (pagesRes.status === 404) {
+    return { configured: false, url: null, lastBuildAt: null };
+  }
+  if (!pagesRes.ok) {
+    const body = await pagesRes.json().catch(() => ({}));
+    throw new Error(`Checking GitHub Pages status failed: ${pagesRes.status} ${body.message ?? pagesRes.statusText}`);
+  }
+  const pages = await pagesRes.json();
+
+  // Best-effort — knowing Pages is configured at all is the important part;
+  // a failure here just means no "last deployed" timestamp, not an error.
+  let lastBuildAt: string | null = null;
+  try {
+    const buildRes = await githubRequest(`/repos/${settings.owner}/${settings.repo}/pages/builds/latest`, settings);
+    if (buildRes.ok) {
+      const build = await buildRes.json();
+      if (typeof build.updated_at === 'string') lastBuildAt = build.updated_at;
+    }
+  } catch {
+    // ignore
+  }
+
+  return { configured: true, url: typeof pages.html_url === 'string' ? pages.html_url : null, lastBuildAt };
 }
 
 // ---------------------------------------------------------------------------
@@ -899,7 +953,8 @@ function renderConnectForm(container: HTMLElement): void {
     el('div', {}, [
       el('p', { className: 'hint' }, [
         'Fine-grained token, scoped to one repo. Needs Contents: read/write, Pull requests: read/write (Sync opens a PR), ' +
-          'and Actions: read/write (only for the Status tab\'s "Rebuild Storybook" and "Send test notification" buttons).',
+          'Actions: read/write (only for the Status tab\'s "Rebuild Storybook" and "Send test notification" buttons), ' +
+          'and Pages: read-only (only to check whether a deployed Storybook build exists, before offering to open it).',
       ]),
     ]),
   );
@@ -1710,13 +1765,17 @@ function renderStorybookGuide(): HTMLElement {
       el('p', { className: 'hint' }, [
         'Point your stories at ',
         el('code', {}, [settings?.path ?? 'design-tokens.json']),
-        ' at the repo root — that\'s the file this plugin keeps synced. Then add a ',
-        el('code', {}, ['postbuild-storybook']),
-        ' npm script that writes ',
+        ' at the repo root — that\'s the file this plugin keeps synced. Then add a script that writes ',
         el('code', {}, ['.storybook-sync.json']),
         ' with ',
         el('code', {}, ['{ "tokensBlobSha": "<git hash-object ' + (settings?.path ?? 'design-tokens.json') + '>", "builtAt": "<now>" }']),
-        ' — that\'s how this Status tab knows a build is current.',
+        ' — that\'s how this Status tab knows a build is current. Call it explicitly from your ',
+        el('strong', {}, ['deploy']),
+        ' workflow, ',
+        el('em', {}, ['after']),
+        ' Pages actually finishes deploying — not as an automatic ',
+        el('code', {}, ['postbuild-storybook']),
+        ' hook, which would also fire on every CI validation build that never deploys anywhere, making this Status tab think a build is live when nothing was ever published.',
       ]),
     );
   } else {
@@ -1854,24 +1913,52 @@ function renderStatusTab(): HTMLElement {
   viewBtn.onclick = () => viewLocalStorybook();
 
   const viewButtons = [viewBtn];
-  // Best-effort assumed URL, same convention used elsewhere in this project
-  // (and not independently verifiable — there's no API to check whether
-  // Pages is even enabled, let alone confirm a custom domain isn't in use
-  // instead). Opens regardless of whether it actually resolves; a 404 in
-  // the browser is a clear enough signal on its own.
-  const owner = state.settings?.owner;
-  const repo = state.settings?.repo;
-  if (owner && repo) {
-    const deployedUrl = `https://${owner}.github.io/${repo}/`;
+  // Checked against GET /repos/.../pages first (api.github.com — already an
+  // allowed domain) rather than just opening the guessed URL and letting a
+  // user hit a raw GitHub 404 page, which is exactly what prompted this.
+  // pagesUrl (when present) is GitHub's own reported html_url — no guessing.
+  if (state.pagesStatus === 'configured' && state.pagesUrl) {
+    const deployedUrl = state.pagesUrl;
     const deployedBtn = el(
       'button',
-      { title: `Opens ${deployedUrl} — the GitHub Pages build. Assumes the default owner.github.io/repo/ URL; not verified against a custom domain or whether Pages is enabled.` },
+      { title: `Opens ${deployedUrl}${state.pagesLastBuildAt ? ` — last deployed ${new Date(state.pagesLastBuildAt).toLocaleString()}` : ''}` },
       [icon('ArrowSquareOut', undefined, 13), 'View Storybook (deployed)'],
     );
     deployedBtn.onclick = () => postToPlugin({ type: 'open-external', url: deployedUrl });
     viewButtons.push(deployedBtn);
   }
   container.appendChild(el('div', { className: 'btn-row' }, viewButtons));
+  if (state.pagesStatus === 'configured' && state.pagesLastBuildAt) {
+    container.appendChild(el('p', { className: 'hint' }, [`Deployed build last updated ${new Date(state.pagesLastBuildAt).toLocaleString()}.`]));
+  }
+
+  if (state.pagesStatus !== 'configured') {
+    // 'not-configured' (a genuine 404 from GitHub) and 'unknown' (the check
+    // itself failed — network error, or a 403 from a PAT missing the
+    // Pages:read scope) are deliberately shown the same way here: neither
+    // one is confident enough to claim "definitely not deployed," so both
+    // just point at the same setup guide rather than asserting something
+    // that might be wrong.
+    container.appendChild(
+      el('p', { className: 'hint' }, [
+        state.pagesStatus === 'unknown'
+          ? "Couldn't confirm whether a deployed build exists (may need the Pages: read-only token permission — see below)."
+          : 'No deployed build found yet.',
+      ]),
+    );
+    const pagesGuide = persistentDetails('pages-setup-guide', false, 'setup-guide', ['How to enable GitHub Pages']);
+    const pagesGuideBody = el('div', {});
+    pagesGuideBody.appendChild(
+      el('p', { className: 'hint' }, ['One-time setup — this plugin can\'t enable Pages itself, it needs repo-admin access this token deliberately doesn\'t request:']),
+    );
+    pagesGuideBody.appendChild(
+      el('pre', {}, [
+        `1. github.com/${state.settings?.owner}/${state.settings?.repo}/settings/pages\n2. Build and deployment → Source → GitHub Actions\n3. Run "Rebuild Storybook" below (or the "Deploy Storybook" workflow manually)`,
+      ]),
+    );
+    pagesGuide.appendChild(pagesGuideBody);
+    container.appendChild(pagesGuide);
+  }
 
   if (state.localStorybookReachable === true) {
     container.appendChild(
@@ -1941,6 +2028,7 @@ async function runCompare() {
   state.storybookError = null;
   state.storybookDeployMessage = null;
   state.storybookDeployError = null;
+  state.pagesError = null;
   state.diff = [];
   state.validationErrors = [];
   state.resolutions = {};
@@ -1952,7 +2040,7 @@ async function runCompare() {
     // open, that's why Figma↔GitHub may still show a diff below (the
     // resolution already exists, just not merged into settings.branch yet).
     const latestPr = state.history[0]?.prNumber != null ? state.history[0] : null;
-    const [figmaTokens, githubResult, marker, prStatus] = await Promise.all([
+    const [figmaTokens, githubResult, marker, prStatus, pages] = await Promise.all([
       requestFigmaTokens(),
       fetchGithubTokens(settings),
       fetchStorybookMarker(settings).catch((err) => {
@@ -1960,12 +2048,27 @@ async function runCompare() {
         return null;
       }),
       latestPr ? fetchPrStatus(settings, latestPr.prNumber).catch(() => null) : Promise.resolve(null),
+      fetchPagesStatus(settings).catch((err) => {
+        state.pagesError = err instanceof Error ? err.message : String(err);
+        return null;
+      }),
     ]);
     state.figmaTokens = figmaTokens;
     state.githubTokens = githubResult.tokens;
     state.githubSha = githubResult.sha;
     state.storybookMarker = marker;
     computeStorybookStatus();
+
+    if (pages) {
+      state.pagesStatus = pages.configured ? 'configured' : 'not-configured';
+      state.pagesUrl = pages.url;
+      state.pagesLastBuildAt = pages.lastBuildAt;
+    } else {
+      // Fetch failed (network error, or non-404 like a 403 from a missing
+      // Pages:read scope) — 'unknown', not 'not-configured'; see the state
+      // field's own comment for why that distinction matters here.
+      state.pagesStatus = 'unknown';
+    }
 
     if (latestPr && prStatus && prStatus.state === 'open') {
       state.pendingPr = { number: latestPr.prNumber, url: latestPr.prUrl, state: 'open' };

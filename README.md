@@ -288,6 +288,12 @@ repo, with:
   state.
 - **Actions: Read and write** — only needed for the Status tab's "Rebuild
   Storybook" button (`workflow_dispatch`); everything else works without it.
+- **Pages: Read-only** — only needed to check whether a deployed Storybook
+  build exists (`GET /pages`) before offering "View Storybook (deployed)".
+  Without it, that check 404s the same way it would if Pages genuinely
+  isn't configured — the Status tab treats both cases identically (shown as
+  "can't confirm," never as a false "definitely not deployed") rather than
+  erroring.
 
 It's stored locally on your machine (Figma's `clientStorage`) and only
 ever sent to `api.github.com` (the only production domain this plugin is
