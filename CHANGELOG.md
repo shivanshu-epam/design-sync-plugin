@@ -9,6 +9,40 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.13.1] - 2026-08-05
+
+### Fixed
+- **`<details>` accordions across the whole app were silently closing on
+  any re-render, not just when the user closed them.** `render()` rebuilds
+  a tab's DOM from scratch on every state change, including ones triggered
+  by a button *inside* an accordion (e.g. "Send test notification" setting
+  a loading state) — and `<details open>` lives only on that DOM node
+  instance, so replacing it always reset to closed (or, for the permission
+  guides, snapped back open even after the user had closed it, since those
+  hardcoded `open: true`). Fixed with a persisted `state.openDetails`
+  map plus a `persistentDetails()` helper, applied to all 9 accordion
+  sites in the codebase (Connect's permissions/manual-entry, Recent
+  activity, Sync's cascade groups, every `renderPermissionErrorGuide` call
+  site, Notifications and its two provider sub-sections, Storybook setup).
+- **Status banner sat flush against the button row above it.**
+  `.status-banner` only had `margin-bottom`; a banner shown right after
+  Connect/Test connection/Cancel (e.g. "Connected to owner/repo") had 0px
+  gap above it. Changed to `margin: 10px 0`.
+- **Repo search dropdown used to vanish while typing or on focus.** It was
+  a native `<input list>` + `<datalist>`, which is unreliable inside a
+  Figma plugin's sandboxed iframe — the browser-native popup would close
+  as the user kept typing instead of updating. Replaced with a
+  hand-rendered dropdown (`.repo-search-menu`) that filters
+  `state.availableRepos` on input and stays open until a selection or
+  blur, so it behaves the same in every browser engine the plugin runs in.
+
+### Changed
+- **Notifications section trimmed and given real branding.** Microsoft
+  Teams and Slack sub-accordions now show their actual logo icon next to
+  the provider name; the intro sentence is one line instead of three; the
+  "Requires `<workflow>` and `<script>`..." paragraph is now a compact
+  `.tag-row` of two pill-style filename tags instead of prose.
+
 ## [1.13.0] - 2026-08-04
 
 ### Changed

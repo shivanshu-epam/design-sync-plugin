@@ -199,6 +199,35 @@
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   button + button { margin-left: 6px; }
   .btn-row { margin-top: 10px; display: flex; }
+  /* Native <input list> + <datalist> is unreliable inside a Figma plugin's
+     sandboxed iframe — the browser-native popup would silently vanish as
+     soon as the user kept typing or the input regained focus. Rendered by
+     hand instead, fully under our control. */
+  .repo-search-wrap { position: relative; flex: 1; }
+  .repo-search-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 20;
+    max-height: 180px;
+    overflow-y: auto;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
+  }
+  .repo-search-option {
+    padding: 7px 10px;
+    font-size: 12.5px;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .repo-search-option:hover, .repo-search-option.active { background: var(--bg-subtle); }
+  .repo-search-option + .repo-search-option { border-top: 1px solid var(--border); }
+  .repo-search-empty { padding: 8px 10px; font-size: 11.5px; color: var(--text-muted); }
   .hint { color: var(--text-muted); font-size: 11.5px; margin-top: 4px; }
   .status-banner {
     display: flex;
@@ -206,7 +235,10 @@
     gap: 8px;
     padding: 9px 11px;
     border-radius: var(--radius);
-    margin-bottom: 10px;
+    /* Was margin-bottom only — a banner directly after a .btn-row (e.g.
+       Connect/Test/Cancel's result) sat flush against the buttons with
+       0px gap above it. */
+    margin: 10px 0;
     font-size: 12px;
     line-height: 1.5;
     border: 1px solid transparent;
@@ -395,6 +427,20 @@
   .connect-card-detail strong { color: var(--text); font-weight: 700; }
   .connect-security-line { display: flex; align-items: center; gap: 5px; }
   .connect-security-line .icon { color: var(--cta); }
+
+  /* Small pill for a compact fact (a filename, a requirement) — replaces
+     a "Requires <code>X</code> and <code>Y</code>..." sentence with
+     something scannable at a glance instead of read word by word. */
+  .tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .tag {
+    font-family: ui-monospace, 'SF Mono', monospace;
+    font-size: 10px;
+    color: var(--text-muted);
+    background: var(--bg-subtle);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 2px 8px;
+  }
 </style>
 </head>
 <body>

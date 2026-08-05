@@ -176,6 +176,16 @@ const state: {
   // fresh each render from whether those fields already have values, same
   // pattern as renderStorybookGuide's `needsSetup`.)
   connectEditing: boolean;
+  // Persists every <details> accordion's open/closed state across
+  // renders, keyed by a stable id. Native <details> state lives on the
+  // DOM node itself — and render() replaces every node in a tab's
+  // container from scratch on ANY state change, including the ones a
+  // button *inside* an accordion triggers (e.g. "Send test notification"
+  // showing a loading state), which was silently closing every open
+  // accordion on the page whenever that happened. Absent from this map =
+  // "never explicitly toggled" => falls back to that accordion's own
+  // computed default (e.g. open on first render if it needs attention).
+  openDetails: Record<string, boolean>;
 } = {
   activeTab: 'connect',
   settings: null,
@@ -212,6 +222,7 @@ const state: {
   notifyTestMessage: null,
   notifyTestError: null,
   connectEditing: false,
+  openDetails: {},
 };
 
 function appendLog(line: string) {
@@ -764,6 +775,25 @@ function detailsSummary(details: HTMLDetailsElement, children: (Node | string)[]
   return el('summary', {}, [caret, ...children]);
 }
 
+// Every collapsible section in the app should go through this rather than
+// a bare el('details', ...) — plain <details> visually snaps shut the
+// moment anything inside it (or anywhere else on the tab) triggers
+// render(), since render() rebuilds the whole container from fresh DOM
+// nodes and native <details> state lives only on the node instance. `id`
+// must be stable and unique per accordion (e.g. include a category/index
+// for anything rendered in a loop) — it's the key into state.openDetails.
+// `defaultOpen` only applies the FIRST time this id is ever seen; once a
+// user toggles it, their choice is what persists, not the default.
+function persistentDetails(id: string, defaultOpen: boolean, className: string, summaryChildren: (Node | string)[]): HTMLDetailsElement {
+  const open = state.openDetails[id] ?? defaultOpen;
+  const details = el('details', { className, open }) as HTMLDetailsElement;
+  details.appendChild(detailsSummary(details, summaryChildren));
+  details.addEventListener('toggle', () => {
+    state.openDetails[id] = details.open;
+  });
+  return details;
+}
+
 function diffValueLine(label: 'Figma' | 'GitHub', display: string, isRef: boolean): HTMLElement {
   // FigmaLogo/GithubLogo used only to identify which side a value came
   // from — nominative use (naming the actual product), not an endorsement
@@ -864,8 +894,7 @@ function renderConnectForm(container: HTMLElement): void {
   container.appendChild(
     el('p', { className: 'hint connect-security-line' }, [icon('CheckCircle', undefined, 11), 'Stored locally, never uploaded except to api.github.com']),
   );
-  const permsDetails = el('details', { className: 'setup-guide nested' });
-  permsDetails.appendChild(detailsSummary(permsDetails, ['What permissions does this need?']));
+  const permsDetails = persistentDetails('connect-permissions', false, 'setup-guide nested', ['What permissions does this need?']);
   permsDetails.appendChild(
     el('div', {}, [
       el('p', { className: 'hint' }, [
@@ -880,33 +909,68 @@ function renderConnectForm(container: HTMLElement): void {
 
   // --- Repo search (the default path) ---
   container.appendChild(el('label', {}, ['Find your repository']));
-  const datalistId = 'repo-options';
+  // A native <input list> + <datalist> combo used to drive this — inside a
+  // Figma plugin's sandboxed iframe, the browser-native popup was unreliable
+  // and would vanish as soon as the user kept typing or the input regained
+  // focus. Rendered by hand instead so open/close is fully in our control.
+  const searchWrap = el('div', { className: 'repo-search-wrap' });
   const repoSearchInput = el('input', {
     type: 'text',
+    autocomplete: 'off',
     placeholder: state.loadingRepos ? 'Loading…' : 'Search or pick from the list',
   });
-  // `list` is a read-only IDL property on HTMLInputElement (reflects the
-  // associated <datalist>, doesn't set it) — must go through setAttribute,
-  // not the usual el() prop-assignment path.
-  repoSearchInput.setAttribute('list', datalistId);
-  // .btn-row is a flex row with no stretch behavior of its own (unlike
-  // .field's direct children, which stretch via flex-direction: column +
-  // the default align-items: stretch) — without this the input would
-  // shrink to its default ~20-character width next to the button.
-  repoSearchInput.style.flex = '1';
   if (state.loadingRepos) repoSearchInput.setAttribute('disabled', 'true');
-  const datalist = el('datalist', { id: datalistId });
-  for (const repo of state.availableRepos) {
-    datalist.appendChild(el('option', { value: repo.fullName }));
-  }
+
+  const applyMatch = (match: RepoOption) => {
+    repoSearchInput.value = match.fullName;
+    ownerInput.value = match.owner;
+    repoInput.value = match.name;
+    if (!branchInput.value.trim()) branchInput.value = match.defaultBranch;
+  };
+
+  const menu = el('div', { className: 'repo-search-menu' });
+  menu.style.display = 'none';
+  const hideMenu = () => {
+    menu.style.display = 'none';
+  };
+  const showMenu = () => {
+    const query = repoSearchInput.value.trim().toLowerCase();
+    const matches = query ? state.availableRepos.filter((r) => r.fullName.toLowerCase().includes(query)) : state.availableRepos;
+    menu.innerHTML = '';
+    if (matches.length === 0) {
+      menu.appendChild(
+        el('div', { className: 'repo-search-empty' }, [
+          state.availableRepos.length === 0 ? 'No repos loaded yet — click the reload button to fetch.' : 'No matches.',
+        ]),
+      );
+    } else {
+      for (const repo of matches.slice(0, 30)) {
+        const option = el('div', { className: 'repo-search-option' }, [repo.fullName]);
+        // mousedown (not click) fires before the input's blur handler, so
+        // the selection lands before hideMenu() would otherwise beat it.
+        option.addEventListener('mousedown', (e) => {
+          e.preventDefault();
+          applyMatch(repo);
+          hideMenu();
+        });
+        menu.appendChild(option);
+      }
+    }
+    menu.style.display = '';
+  };
   repoSearchInput.oninput = () => {
     const match = state.availableRepos.find((r) => r.fullName === repoSearchInput.value);
-    if (match) {
-      ownerInput.value = match.owner;
-      repoInput.value = match.name;
-      if (!branchInput.value.trim()) branchInput.value = match.defaultBranch;
-    }
+    if (match) applyMatch(match);
+    showMenu();
   };
+  repoSearchInput.addEventListener('focus', () => showMenu());
+  repoSearchInput.addEventListener('blur', () => hideMenu());
+  repoSearchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') hideMenu();
+  });
+  searchWrap.appendChild(repoSearchInput);
+  searchWrap.appendChild(menu);
+
   const loadReposBtn = el(
     'button',
     { className: 'icon-btn', title: 'Fetch every repository the token above can see, via GET /user/repos' },
@@ -915,8 +979,7 @@ function renderConnectForm(container: HTMLElement): void {
   loadReposBtn.setAttribute('aria-label', 'Load my repos');
   if (state.loadingRepos) loadReposBtn.setAttribute('disabled', 'true');
   loadReposBtn.onclick = () => loadUserRepos(tokenInput.value.trim());
-  container.appendChild(el('div', { className: 'btn-row' }, [repoSearchInput, loadReposBtn]));
-  container.appendChild(datalist);
+  container.appendChild(el('div', { className: 'btn-row' }, [searchWrap, loadReposBtn]));
   if (state.reposError) {
     container.appendChild(statusBanner('error', [state.reposError]));
   } else if (state.availableRepos.length > 0) {
@@ -928,11 +991,12 @@ function renderConnectForm(container: HTMLElement): void {
   // --- Manual entry (escape hatch — open by default only when there's
   // nothing to show yet, i.e. no owner/repo set and search hasn't been
   // used; otherwise collapsed, since search already filled them in) ---
-  const manualDetails = el('details', {
-    className: 'setup-guide nested',
-    open: !s.owner.trim() && !s.repo.trim(),
-  });
-  manualDetails.appendChild(detailsSummary(manualDetails, ['Enter repository manually']));
+  const manualDetails = persistentDetails(
+    'connect-manual-entry',
+    !s.owner.trim() && !s.repo.trim(),
+    'setup-guide nested',
+    ['Enter repository manually'],
+  );
   const manualBody = el('div', {});
   manualBody.appendChild(requiredRow('Repository owner', ownerInput));
   manualBody.appendChild(requiredRow('Repository name', repoInput));
@@ -1002,7 +1066,7 @@ function renderConnectForm(container: HTMLElement): void {
   if (state.connectStatus) {
     container.appendChild(statusBanner(state.connectStatus.ok ? 'success' : 'error', [state.connectStatus.message]));
     if (!state.connectStatus.ok) {
-      const guide = renderPermissionErrorGuide(state.connectStatus.message);
+      const guide = renderPermissionErrorGuide(state.connectStatus.message, 'connect');
       if (guide) container.appendChild(guide);
     }
   }
@@ -1013,8 +1077,7 @@ function renderConnectForm(container: HTMLElement): void {
 // there's nothing to show, rather than a pointless empty trigger.
 function renderRecentActivity(): HTMLElement | null {
   if (state.history.length === 0) return null;
-  const details = el('details', { className: 'setup-guide' });
-  details.appendChild(detailsSummary(details, [`Recent activity (${Math.min(state.history.length, 5)})`]));
+  const details = persistentDetails('recent-activity', false, 'setup-guide', [`Recent activity (${Math.min(state.history.length, 5)})`]);
   const body = el('div', {});
   for (const entry of state.history.slice(0, 5)) {
     body.appendChild(
@@ -1237,7 +1300,7 @@ function renderSyncTab(): HTMLElement {
 
   if (state.syncError) {
     container.appendChild(statusBanner('error', [state.syncError]));
-    const guide = renderPermissionErrorGuide(state.syncError);
+    const guide = renderPermissionErrorGuide(state.syncError, 'sync');
     if (guide) container.appendChild(guide);
   }
   const validationBanner = renderValidationErrors();
@@ -1356,10 +1419,10 @@ function renderSyncTab(): HTMLElement {
 // collapsible and .audit-change-row compact-list styling rather than
 // introducing new CSS for a one-off.
 function renderCascadeGroup(rows: DiffEntry[]): HTMLElement {
-  const details = el('details', { className: 'setup-guide' });
-  details.appendChild(
-    detailsSummary(details, [icon('ArrowsLeftRight', 'summary-icon', 13), `${rows.length} more auto-resolve — no action needed`]),
-  );
+  const details = persistentDetails(`cascade-${rows[0]?.category ?? 'unknown'}`, false, 'setup-guide', [
+    icon('ArrowsLeftRight', 'summary-icon', 13),
+    `${rows.length} more auto-resolve — no action needed`,
+  ]);
   const body = el('div', {});
   body.appendChild(
     el('p', { className: 'hint' }, [
@@ -1472,11 +1535,10 @@ const DIFF_STATUS_LABEL: Record<DiffEntry['status'], string> = {
 // common one — usually Pull requests or Actions write access missing from
 // the PAT), instead of leaving the user to work out from a raw API error
 // message which of the three permissions this plugin needs is missing.
-function renderPermissionErrorGuide(error: string): HTMLElement | null {
+function renderPermissionErrorGuide(error: string, contextId: string): HTMLElement | null {
   if (!/403|not accessible/i.test(error)) return null;
 
-  const details = el('details', { open: true, className: 'setup-guide' });
-  details.appendChild(detailsSummary(details, ['How to fix this: grant the missing permission']));
+  const details = persistentDetails(`permission-guide-${contextId}`, true, 'setup-guide', ['How to fix this: grant the missing permission']);
 
   const body = el('div', {});
   body.appendChild(
@@ -1532,18 +1594,15 @@ function renderPermissionErrorGuide(error: string): HTMLElement | null {
 // verify it worked, not holding the secret itself — see notify-on-sync.mjs
 // and notify-on-sync.yml in the tokens repo.
 function renderNotificationsGuide(): HTMLElement {
-  const details = el('details', { className: 'setup-guide' });
-  details.appendChild(detailsSummary(details, ['Notifications']));
+  const details = persistentDetails('notifications', false, 'setup-guide', ['Notifications']);
 
   const body = el('div', {});
-  body.appendChild(
-    el('p', { className: 'hint' }, [
-      'Posts a message whenever a sync lands — actor, PR link, how many tokens changed. Set up either provider, or both — neither is required.',
-    ]),
-  );
+  body.appendChild(el('p', { className: 'hint' }, ['Posts a message when a sync lands. Set up either provider, or both.']));
 
-  const teamsDetails = el('details', { className: 'setup-guide nested' });
-  teamsDetails.appendChild(detailsSummary(teamsDetails, ['Microsoft Teams']));
+  const teamsDetails = persistentDetails('notifications-teams', false, 'setup-guide nested', [
+    icon('MicrosoftTeamsLogo', undefined, 13),
+    'Microsoft Teams',
+  ]);
   teamsDetails.appendChild(
     el('div', {}, [
       el('pre', {}, [
@@ -1561,8 +1620,7 @@ function renderNotificationsGuide(): HTMLElement {
   );
   body.appendChild(teamsDetails);
 
-  const slackDetails = el('details', { className: 'setup-guide nested' });
-  slackDetails.appendChild(detailsSummary(slackDetails, ['Slack']));
+  const slackDetails = persistentDetails('notifications-slack', false, 'setup-guide nested', [icon('SlackLogo', undefined, 13), 'Slack']);
   slackDetails.appendChild(
     el('div', {}, [
       el('pre', {}, [
@@ -1578,12 +1636,9 @@ function renderNotificationsGuide(): HTMLElement {
   );
   body.appendChild(slackDetails);
   body.appendChild(
-    el('p', { className: 'hint' }, [
-      'Requires ',
-      el('code', {}, ['.github/workflows/notify-on-sync.yml']),
-      ' and ',
-      el('code', {}, ['scripts/notify-on-sync.mjs']),
-      ' to exist in the tokens repo.',
+    el('div', { className: 'tag-row' }, [
+      el('span', { className: 'tag', title: 'Required workflow file in the tokens repo' }, ['.github/workflows/notify-on-sync.yml']),
+      el('span', { className: 'tag', title: 'Required script in the tokens repo' }, ['scripts/notify-on-sync.mjs']),
     ]),
   );
 
@@ -1610,7 +1665,7 @@ function renderNotificationsGuide(): HTMLElement {
   if (state.notifyTestMessage) body.appendChild(el('p', { className: 'hint' }, [state.notifyTestMessage]));
   if (state.notifyTestError) {
     body.appendChild(statusBanner('error', [state.notifyTestError]));
-    const guide = renderPermissionErrorGuide(state.notifyTestError);
+    const guide = renderPermissionErrorGuide(state.notifyTestError, 'notify-test');
     if (guide) body.appendChild(guide);
   }
 
@@ -1624,8 +1679,9 @@ function renderStorybookGuide(): HTMLElement {
   const cloneUrl = settings ? `https://github.com/${settings.owner}/${settings.repo}.git` : 'https://github.com/<owner>/<repo>.git';
   const needsSetup = state.storybookStatus === 'never-built' || state.storybookStatus === 'error' || state.storybookStatus === 'unknown';
 
-  const details = el('details', { open: needsSetup, className: 'setup-guide' });
-  details.appendChild(detailsSummary(details, [needsSetup ? 'How to set up Storybook for this repo' : 'How to update Storybook']));
+  const details = persistentDetails('storybook-guide', needsSetup, 'setup-guide', [
+    needsSetup ? 'How to set up Storybook for this repo' : 'How to update Storybook',
+  ]);
 
   const body = el('div', {});
   if (needsSetup) {
@@ -1683,7 +1739,7 @@ function renderStatusTab(): HTMLElement {
 
   if (state.syncError) {
     container.appendChild(statusBanner('error', [state.syncError]));
-    const guide = renderPermissionErrorGuide(state.syncError);
+    const guide = renderPermissionErrorGuide(state.syncError, 'status');
     if (guide) container.appendChild(guide);
   }
   const validationBanner = renderValidationErrors();
@@ -2257,7 +2313,7 @@ function renderHistoryTab(): HTMLElement {
 
   if (state.auditLogError) {
     container.appendChild(statusBanner('error', [state.auditLogError]));
-    const guide = renderPermissionErrorGuide(state.auditLogError);
+    const guide = renderPermissionErrorGuide(state.auditLogError, 'history');
     if (guide) container.appendChild(guide);
   }
   if (state.syncError) {
