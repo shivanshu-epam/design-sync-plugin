@@ -1852,7 +1852,26 @@ function renderStatusTab(): HTMLElement {
   if (!state.checkingLocalStorybook) viewBtn.prepend(icon('ArrowSquareOut', undefined, 13));
   if (state.checkingLocalStorybook) viewBtn.setAttribute('disabled', 'true');
   viewBtn.onclick = () => viewLocalStorybook();
-  container.appendChild(el('div', { className: 'btn-row' }, [viewBtn]));
+
+  const viewButtons = [viewBtn];
+  // Best-effort assumed URL, same convention used elsewhere in this project
+  // (and not independently verifiable — there's no API to check whether
+  // Pages is even enabled, let alone confirm a custom domain isn't in use
+  // instead). Opens regardless of whether it actually resolves; a 404 in
+  // the browser is a clear enough signal on its own.
+  const owner = state.settings?.owner;
+  const repo = state.settings?.repo;
+  if (owner && repo) {
+    const deployedUrl = `https://${owner}.github.io/${repo}/`;
+    const deployedBtn = el(
+      'button',
+      { title: `Opens ${deployedUrl} — the GitHub Pages build. Assumes the default owner.github.io/repo/ URL; not verified against a custom domain or whether Pages is enabled.` },
+      [icon('ArrowSquareOut', undefined, 13), 'View Storybook (deployed)'],
+    );
+    deployedBtn.onclick = () => postToPlugin({ type: 'open-external', url: deployedUrl });
+    viewButtons.push(deployedBtn);
+  }
+  container.appendChild(el('div', { className: 'btn-row' }, viewButtons));
 
   if (state.localStorybookReachable === true) {
     container.appendChild(

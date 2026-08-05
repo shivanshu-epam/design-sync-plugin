@@ -9,6 +9,21 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.17.0] - 2026-08-05
+
+### Added
+- **"View Storybook (deployed)" button on the Status tab**, next to the
+  existing "View Storybook (local)" — opens `https://{owner}.github.io/
+  {repo}/` via `figma.openExternal`, so a user who doesn't know how to run
+  `npm run storybook` locally (or is nowhere near a terminal) can still see
+  the live docs with one click. Same best-effort framing as this project's
+  other assumed-Pages-URL guesses (v1.11.0's reverted status-page link
+  used the identical convention): not verified against a custom domain or
+  whether Pages is even enabled — a 404 in the opened tab is a clear
+  enough signal on its own, and this plugin has no API to check in
+  advance. Only rendered once a repo is connected (needs `owner`/`repo` to
+  build the URL).
+
 ## [1.16.2] - 2026-08-05
 
 ### Fixed
