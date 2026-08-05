@@ -9,28 +9,49 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
-## [1.9.0] - 2026-08-04
+## [1.12.0] - 2026-08-04
 
 ### Changed
-- **Breaking: a sync that only updates Figma (GitHub already had the
-  value) now opens a PR too, instead of being skipped entirely.** Found
-  via a real case: editing `design-tokens.json` directly on GitHub, then
-  running Sync in the plugin — Figma updated correctly, but no
-  audit-log entry was written and no Teams/Slack notification fired,
-  because both only trigger from inside the PR-opening branch of
-  `runSync`, which was gated purely on `githubContentChanged`. A token
-  resolved as "Use GitHub" whose value is already on GitHub makes
-  `githubContentChanged` false (nothing to commit) even though Figma
-  genuinely needs the write — that whole sync was invisible to History
-  and notifications as a result. The gate is now `githubChanged ||
-  hasAnyEntries(figmaApply)`: GitHub's file is only committed when it
-  actually needs to change, but the PR — carrying at minimum the
-  audit-log entry — opens whenever *either* side did real work. The true
-  no-op case (nothing resolved, nothing to do) still skips the PR
-  entirely, unchanged from v1.4.3.
-- `sync-logic.ts` gained `hasAnyEntries()`, with 3 new tests (28 total)
-  including one that reproduces the exact "Use GitHub resolution, GitHub
-  already matches" scenario that exposed this gap.
+- **Full visual revamp** — colors, typography, and the plugin's first
+  iconography, using the `ui-ux-pro-max` skill's own search tool rather
+  than freehand design decisions. Its product-type search matched this
+  plugin closest to "Developer Tool / IDE" and "Minimalism & Swiss Style"
+  (the latter's own description: "Best for: ...dashboards, documentation
+  sites, SaaS platforms, professional tools") — both flagged dual-mode
+  (light + dark), the hard requirement given Figma itself runs in both.
+- **New slate + blue + green palette**, replacing the EPAM UUI-derived
+  one, in both light and dark. Every CSS custom-property name and every
+  place it's consumed is unchanged — only the assigned hex values moved —
+  so nothing needed restructuring, just re-skinning. Contrast-verified
+  with an actual WCAG relative-luminance calculation, not eyeballed:
+  body text hits 17:1 (light) / 17:1 (dark), muted text 4.6:1 / 7.0:1.
+  `--accent` and `--cta` back solid white-text buttons in one role and
+  (accent only) inline links in another — roles that pull toward opposite
+  shades in dark mode; `--accent` (#3678E2) is tuned to the best
+  achievable balance for both (~4.2:1 each) rather than optimizing one at
+  the other's expense, documented inline in `ui.template.html`.
+- **First icon set** (`icons.ts`) — 20 icons, real Phosphor "regular"
+  weight SVG path data (MIT license) extracted from `@phosphor-icons/core`
+  and inlined as string constants (no runtime dependency — a Figma
+  plugin's UI iframe can't load an icon font or hit a CDN). Applied to:
+  the tab bar (previously text-only, "Custom Tokens" wrapped to 2 lines —
+  icon-above-label stacking fixed both problems at once), the
+  FIGMA/GITHUB source chips (nominative use of `FigmaLogo`/`GithubLogo`),
+  every diff-row badge, a new shared `statusBanner()` helper (13+ call
+  sites used to hand-build near-identical success/error `<div>`s —
+  centralizing them meant "never convey status by color alone," an
+  Accessibility rule from the skill, only had to be added once), the
+  Revert/Copy/PR-link buttons, loading states (a spun `CircleNotch`
+  replaces plain "Checking…"/"Triggering…" text with zero motion
+  feedback), and `<details>` disclosure carets (native marker replaced —
+  looked out of place once everything else had a real icon).
+- Dropped the `'Source Sans Pro', ...` font stack's now-meaningless first
+  entry (a Google/Adobe font effectively never installed locally, so the
+  stack already fell through to system fonts in practice) in favor of a
+  plain system-font stack — the honest equivalent of the skill's
+  recommended "Developer Mono" pairing (JetBrains Mono + IBM Plex Sans),
+  which can't be loaded here for the same no-external-assets reason the
+  icons can't be a font/CDN.
 
 ## [1.11.1] - 2026-08-04
 
@@ -160,6 +181,29 @@ CI run. Neither is what got built, for two concrete reasons:
   about whether GitHub's Contents API creates a real commit object for
   byte-identical content — rejected in favor of a mechanism with no such
   assumption.
+
+## [1.9.0] - 2026-08-04
+
+### Changed
+- **Breaking: a sync that only updates Figma (GitHub already had the
+  value) now opens a PR too, instead of being skipped entirely.** Found
+  via a real case: editing `design-tokens.json` directly on GitHub, then
+  running Sync in the plugin — Figma updated correctly, but no
+  audit-log entry was written and no Teams/Slack notification fired,
+  because both only trigger from inside the PR-opening branch of
+  `runSync`, which was gated purely on `githubContentChanged`. A token
+  resolved as "Use GitHub" whose value is already on GitHub makes
+  `githubContentChanged` false (nothing to commit) even though Figma
+  genuinely needs the write — that whole sync was invisible to History
+  and notifications as a result. The gate is now `githubChanged ||
+  hasAnyEntries(figmaApply)`: GitHub's file is only committed when it
+  actually needs to change, but the PR — carrying at minimum the
+  audit-log entry — opens whenever *either* side did real work. The true
+  no-op case (nothing resolved, nothing to do) still skips the PR
+  entirely, unchanged from v1.4.3.
+- `sync-logic.ts` gained `hasAnyEntries()`, with 3 new tests (28 total)
+  including one that reproduces the exact "Use GitHub resolution, GitHub
+  already matches" scenario that exposed this gap.
 
 ## [1.8.2] - 2026-08-04
 

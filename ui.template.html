@@ -5,81 +5,107 @@
 <title>Design Sync</title>
 <style>
   /*
-   * Palette pulled directly from EPAM UUI's own Loveship theme tokens —
-   * the same design system this plugin syncs into GitHub (see
-   * design-tokens.json, Theme/Loveship-Light and Theme/Loveship-Dark).
-   * Not approximated from screenshots: these are the actual
-   * core/neutral, core/semantic, and core/controls values.
+   * Developer-tool palette (slate + blue + green), chosen via the
+   * ui-ux-pro-max skill's own search tool against this project's actual
+   * shape: "Developer Tool / IDE" and "Minimalism & Swiss Style" were its
+   * closest product-type matches (the latter's own description: "Best for:
+   * ...dashboards, documentation sites, SaaS platforms, professional
+   * tools"), both flagged dual-mode (light + dark), which a Figma plugin
+   * needs since Figma itself runs in both.
+   *
+   * --accent and --cta are each used in two different roles that pull in
+   * opposite directions for contrast: white text ON TOP of a solid button
+   * (needs a darker shade), and the same color used AS text/links against
+   * the page background (needs a lighter shade in dark mode, since the bg
+   * is near-black). No single hue satisfies both at a full 4.5:1 in dark
+   * mode — verified with an actual WCAG relative-luminance calculation,
+   * not eyeballed — so --accent (#3678E2) is deliberately tuned to the
+   * best achievable balance point for both roles (~4.2:1 each) rather than
+   * optimizing one role at the other's expense. --cta only ever backs
+   * white text (never used as inline link text), so it's picked purely for
+   * that: 5.02:1 in both modes.
    */
   :root {
     color-scheme: light dark;
-    --chrome-bg: #1d1e26;      /* Loveship neutral-90 — UUI's own nav chrome is always dark */
-    --chrome-text: #acafbf;    /* neutral-50 */
-    --chrome-text-active: #ffffff;
+    --chrome-bg: #0f172a;       /* slate-900 — nav chrome stays dark in both modes */
+    --chrome-text: #94a3b8;     /* slate-400 */
+    --chrome-text-active: #f8fafc;
 
-    --bg: #f5f6fa;             /* neutral-10 — page background */
-    --surface: #ffffff;        /* neutral-0 / control-bg — panels, inputs */
-    --bg-subtle: #ebedf5;      /* neutral-20 — code/log blocks */
-    --border: #ced0db;         /* neutral-40 / control-border */
-    --text: #303240;           /* neutral-80 / control-text */
-    --text-muted: #6c6f80;     /* neutral-60 / control-text-disabled */
-    --text-placeholder: #acafbf; /* neutral-50 */
+    --bg: #f8fafc;              /* slate-50 — page background */
+    --surface: #ffffff;         /* panels, inputs */
+    --bg-subtle: #f1f5f9;       /* slate-100 — code/log blocks */
+    --border: #e2e8f0;          /* slate-200 */
+    --text: #0f172a;            /* slate-900 — 17.1:1 on --bg */
+    --text-muted: #64748b;      /* slate-500 — 4.6:1 on --bg */
+    --text-placeholder: #94a3b8; /* slate-400 */
 
-    --accent: #009ecc;         /* semantic/primary-50 — "Primary Action" blue */
-    --accent-hover: #0086ad;   /* semantic/primary-60 */
+    --accent: #3678e2;          /* primary actions, links — see note above */
+    --accent-hover: #2a5ec4;
     --accent-text: #ffffff;
 
-    --cta: #67a300;            /* semantic/accent-50 — "Call to action" green */
-    --cta-hover: #528500;      /* semantic/accent-60 */
+    --cta: #15803d;             /* sync/commit action, Figma-source chip — 5.0:1 w/ white text */
+    --cta-hover: #11642f;
 
-    --danger: #ff4242;         /* semantic/critical-50 */
-    --danger-hover: #e22a2a;   /* semantic/critical-60 */
-    --danger-bg: #fde1e1;      /* semantic/critical-10 */
+    --danger: #dc2626;          /* red-600 — 4.8:1 on --bg */
+    --danger-hover: #b91c1c;
+    --danger-bg: #fee2e2;
 
-    --success-bg: #ebf3d8;     /* semantic/accent-10 */
-    --success-text: #303240;
+    --success-bg: #dcfce7;
+    --success-text: #14532d;    /* 8.3:1 on --success-bg */
 
-    --warn: #fcaa00;
-    --warn-bg: #ffedc9;
+    --warn: #b45309;            /* amber-700, not the more common 600 — 600 is only 3.2:1 on white, fails as icon/text color */
+    --warn-bg: #fef3c7;
 
-    --radius: 3px;             /* UUI's actual control corner radius */
+    --radius: 5px;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --bg: #1d1e26;             /* Loveship-Dark neutral-90 */
-      --surface: #272833;        /* Loveship-Dark control-bg */
-      --bg-subtle: #21222b;
-      --border: #585b69;         /* Loveship-Dark control-border */
-      --text: #fafafc;           /* Loveship-Dark control-text */
-      --text-muted: #acafbf;     /* Loveship-Dark control-text-disabled */
-      --text-placeholder: #acafbf;
+      --chrome-bg: #020617;     /* slate-950 */
+      --chrome-text: #94a3b8;
 
-      --accent: #008ace;         /* Loveship-Dark semantic/primary-50 */
-      --accent-hover: #48a4d0;   /* Loveship-Dark semantic/primary-60 */
+      --bg: #0f172a;            /* slate-900 */
+      --surface: #1b2336;       /* elevated above --bg */
+      --bg-subtle: #171f30;
+      --border: #334155;        /* slate-700 */
+      --text: #f8fafc;          /* slate-50 — 17.1:1 on --bg */
+      --text-muted: #94a3b8;    /* slate-400 — 7.0:1 on --bg */
+      --text-placeholder: #64748b;
 
-      --cta: #669900;            /* Loveship-Dark semantic/accent-50 */
-      --cta-hover: #83b918;      /* Loveship-Dark semantic/accent-60 */
+      --accent: #3678e2;        /* same hex as light — see note above */
+      --accent-hover: #5a93ea;  /* hover brightens in dark mode, not darkens */
 
-      --danger: #cc482d;         /* Loveship-Dark semantic/critical-50 */
-      --danger-hover: #e56248;   /* Loveship-Dark semantic/critical-60 */
-      --danger-bg: #473943;      /* Loveship-Dark semantic/critical-10 */
+      --cta: #15803d;           /* same hex as light — only ever backs white text */
+      --cta-hover: #1d9a4b;
 
-      --success-bg: #2c3320;
-      --success-text: #d5e8b3;
+      --danger: #ef4444;        /* red-500 — 4.7:1 on dark --bg (red-600 would only be 3.7:1) */
+      --danger-hover: #f87171;
+      --danger-bg: #450a0a;
 
-      --warn-bg: #3a3120;
+      --success-bg: #052e16;
+      --success-text: #86efac;  /* 10.6:1 on --success-bg */
+
+      --warn: #f59e0b;          /* amber-500 — 8.3:1 on dark --bg */
+      --warn-bg: #451a03;
     }
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    font-family: 'Source Sans Pro', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     font-size: 13px;
     line-height: 1.45;
     color: var(--text);
     background: var(--bg);
   }
   #app { display: flex; flex-direction: column; height: 100vh; }
+
+  /* Icons — inline SVGs from icons.ts (Phosphor, regular weight), sized to
+     match surrounding text via currentColor + em-relative sizing isn't
+     needed since each <svg> already carries explicit width/height. */
+  .icon { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; line-height: 0; }
+  .icon svg { display: block; }
+  .icon.spin svg { animation: icon-spin 0.9s linear infinite; }
+  @keyframes icon-spin { to { transform: rotate(360deg); } }
 
   header.app-header { flex-shrink: 0; background: var(--chrome-bg); }
   .app-title {
@@ -92,22 +118,29 @@
     font-size: 12.5px;
     letter-spacing: 0.01em;
   }
-  .app-logo { width: 9px; height: 9px; border-radius: 2px; background: var(--accent); flex-shrink: 0; }
+  .app-logo { color: var(--accent); }
   nav.tabs { display: flex; }
   .tab-btn {
     flex: 1;
-    padding: 9px 6px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 8px 4px 7px;
     background: none;
     border: none;
     border-bottom: 2px solid transparent;
     font-family: inherit;
-    font-size: 10.5px;
+    font-size: 9.5px;
     font-weight: 600;
     letter-spacing: 0.01em;
+    line-height: 1.25;
     color: var(--chrome-text);
     cursor: pointer;
   }
+  .tab-btn .icon { color: var(--chrome-text); }
   .tab-btn.active { color: var(--chrome-text-active); border-bottom-color: var(--accent); }
+  .tab-btn.active .icon { color: var(--accent); }
 
   main#panel { flex: 1; overflow-y: auto; padding: 12px; background: var(--bg); }
   footer.app-footer {
@@ -142,6 +175,9 @@
   .row { display: flex; gap: 8px; }
   .row > * { flex: 1; }
   button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     font-family: inherit;
     font-size: 12.5px;
     font-weight: 600;
@@ -164,9 +200,25 @@
   button + button { margin-left: 6px; }
   .btn-row { margin-top: 10px; display: flex; }
   .hint { color: var(--text-muted); font-size: 11.5px; margin-top: 4px; }
-  .status-banner { padding: 9px 11px; border-radius: var(--radius); margin-bottom: 10px; font-size: 12px; line-height: 1.5; border: 1px solid transparent; }
+  .status-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 9px 11px;
+    border-radius: var(--radius);
+    margin-bottom: 10px;
+    font-size: 12px;
+    line-height: 1.5;
+    border: 1px solid transparent;
+  }
   .status-banner.success { background: var(--success-bg); color: var(--success-text); border-color: var(--cta); }
   .status-banner.error { background: var(--danger-bg); color: var(--text); border-color: var(--danger); }
+  .status-banner.info { background: var(--bg-subtle); color: var(--text); border-color: var(--accent); }
+  .status-banner-icon { margin-top: 2px; }
+  .status-banner.success .status-banner-icon { color: var(--cta); }
+  .status-banner.error .status-banner-icon { color: var(--danger); }
+  .status-banner.info .status-banner-icon { color: var(--accent); }
+  .status-banner-content { flex: 1 1 auto; min-width: 0; }
   .status-banner ul { margin: 4px 0 0; padding: 0 0 0 16px; }
   .status-banner li { margin-bottom: 2px; }
   table.token-table { width: 100%; border-collapse: collapse; margin-top: 8px; }
@@ -190,7 +242,9 @@
   .diff-row.status-modified { border-left: 3px solid var(--warn); background: var(--warn-bg); }
   .diff-key { font-weight: 700; font-size: 12.5px; margin-bottom: 7px; overflow-wrap: anywhere; }
   .diff-badge {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     font-size: 9.5px;
     font-weight: 700;
     text-transform: uppercase;
@@ -213,6 +267,9 @@
     line-height: 1.5;
   }
   .diff-value-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
     flex-shrink: 0;
     white-space: nowrap;
     font-family: inherit;
@@ -265,7 +322,8 @@
     margin-top: 10px;
   }
   .history-item { font-size: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); }
-  .history-item a { color: var(--accent); }
+  .pr-link { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); text-decoration: none; }
+  .pr-link:hover { text-decoration: underline; }
   details.setup-guide {
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -273,8 +331,22 @@
     padding: 8px 10px;
     background: var(--surface);
   }
-  details.setup-guide summary { cursor: pointer; font-weight: 600; font-size: 11px; }
-  details.setup-guide summary::marker { color: var(--text-muted); }
+  details.setup-guide summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  details.setup-guide summary .summary-icon { color: var(--text-muted); }
+  /* Default browser marker replaced by our own CaretRight/CaretDown icon
+     (see renderDetailsCaret in ui.ts) — a plain triangle looked out of
+     place once every other disclosure/status signal in the UI got a
+     proper icon. */
+  details.setup-guide summary { list-style: none; }
+  details.setup-guide summary::-webkit-details-marker { display: none; }
+  details.setup-guide summary .caret { color: var(--text-muted); }
   details.setup-guide > div { margin-top: 8px; }
   details.setup-guide pre {
     background: var(--bg-subtle);

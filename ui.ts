@@ -29,6 +29,7 @@ import {
   preferLiveFigmaExtensions,
   resolveForFigmaApply,
 } from './sync-logic';
+import { iconSvg, type IconName } from './icons';
 
 // ---------------------------------------------------------------------------
 // Messaging with code.ts
@@ -654,6 +655,20 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
+// Shared "Copy" button — icon swaps to a checkmark on success (or an X on
+// failure) for ~1.5s instead of the old text-only "Copy" → "Copied!" swap,
+// which read as a plain state change rather than a confirmation.
+function copyButton(text: string): HTMLButtonElement {
+  const idleContent = (): (Node | string)[] => [icon('Copy', undefined, 13), 'Copy'];
+  const btn = el('button', {}, idleContent());
+  btn.onclick = async () => {
+    const ok = await copyToClipboard(text);
+    btn.replaceChildren(...[icon(ok ? 'Check' : 'XCircle', undefined, 13), ok ? 'Copied!' : 'Copy failed']);
+    setTimeout(() => btn.replaceChildren(...idleContent()), 1500);
+  };
+  return btn;
+}
+
 function computeStorybookStatus() {
   if (state.storybookError) {
     state.storybookStatus = 'error';
@@ -687,9 +702,65 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return node;
 }
 
+// Icon markup is a fixed, hand-authored constant (icons.ts) — never user
+// input — so setting innerHTML here carries no injection risk. `size`
+// matches the 16px default most UI text sits at; pass a larger value for
+// the rare spot that needs one (none currently do).
+function icon(name: IconName, className?: string, size?: number): HTMLElement {
+  return el('span', { className: `icon${className ? ` ${className}` : ''}`, innerHTML: iconSvg(name, size) });
+}
+
+// Every status-banner call site used to build its own success/error <div>
+// by hand — 13+ near-identical copies. Centralizing here means the
+// icon-pairing (never convey status by color alone) only had to be added
+// once, and can't drift out of sync between call sites.
+const STATUS_BANNER_ICON: Record<'success' | 'error' | 'info', IconName> = {
+  success: 'CheckCircle',
+  error: 'XCircle',
+  info: 'Info',
+};
+function statusBanner(kind: 'success' | 'error' | 'info', children: (Node | string)[]): HTMLElement {
+  return el('div', { className: `status-banner ${kind}` }, [
+    icon(STATUS_BANNER_ICON[kind], 'status-banner-icon', 14),
+    el('div', { className: 'status-banner-content' }, children),
+  ]);
+}
+
+// A link to a PR always leaves the plugin — the external-link icon signals
+// that before the click, rather than a bare "PR #12" that looks like it
+// might do something in-place.
+function prLink(url: string, number: number): HTMLElement {
+  return el('a', { href: url, target: '_blank', className: 'pr-link' }, [`PR #${number}`, icon('ArrowSquareOut', undefined, 11)]);
+}
+
+// Every "Checking…"/"Loading…"/"Triggering…" button used to be plain text
+// with no motion feedback at all. A spun CircleNotch replaces that — used
+// as button *children*, not textContent, so el()'s Object.assign(node,
+// props) can't be used for the loading label itself.
+function loadingLabel(loading: boolean, loadingText: string, idleText: string): (Node | string)[] {
+  return loading ? [icon('CircleNotch', 'spin', 13), loadingText] : [idleText];
+}
+
+// <details>'s open/closed state is native DOM state, toggled by the browser
+// directly — it never goes through this app's own render() cycle, so a
+// caret icon set once at creation would go stale the first time someone
+// clicks it. Listens to the native 'toggle' event instead of re-deriving
+// on every render.
+function detailsSummary(details: HTMLDetailsElement, children: (Node | string)[]): HTMLElement {
+  const caret = icon(details.open ? 'CaretDown' : 'CaretRight', 'caret', 11);
+  details.addEventListener('toggle', () => {
+    caret.innerHTML = iconSvg(details.open ? 'CaretDown' : 'CaretRight', 11);
+  });
+  return el('summary', {}, [caret, ...children]);
+}
+
 function diffValueLine(label: 'Figma' | 'GitHub', display: string, isRef: boolean): HTMLElement {
+  // FigmaLogo/GithubLogo used only to identify which side a value came
+  // from — nominative use (naming the actual product), not an endorsement
+  // claim, same convention as any "open in GitHub" icon button.
+  const labelIcon: IconName = label === 'Figma' ? 'FigmaLogo' : 'GithubLogo';
   const children: (Node | string)[] = [
-    el('span', { className: `diff-value-label ${label.toLowerCase()}` }, [label]),
+    el('span', { className: `diff-value-label ${label.toLowerCase()}` }, [icon(labelIcon, undefined, 11), label]),
     el('span', { className: 'diff-value-text' }, [display]),
   ];
   if (isRef) children.push(el('span', { className: 'diff-badge' }, ['REF']));
@@ -726,13 +797,7 @@ function renderConnectTab(): HTMLElement {
   container.appendChild(el('h2', {}, ['GitHub Repository']));
 
   if (state.connectStatus) {
-    container.appendChild(
-      el(
-        'div',
-        { className: `status-banner ${state.connectStatus.ok ? 'success' : 'error'}` },
-        [state.connectStatus.message],
-      ),
-    );
+    container.appendChild(statusBanner(state.connectStatus.ok ? 'success' : 'error', [state.connectStatus.message]));
   }
 
   const s = state.settings ?? { owner: '', repo: '', branch: 'main', path: 'design-tokens.json', token: '' };
@@ -792,10 +857,11 @@ function renderConnectTab(): HTMLElement {
       if (!branchInput.value.trim()) branchInput.value = match.defaultBranch;
     }
   };
-  const loadReposBtn = el('button', {
-    textContent: state.loadingRepos ? 'Loading…' : 'Load my repos',
-    title: 'Fetch every repository the token above can see, via GET /user/repos',
-  });
+  const loadReposBtn = el(
+    'button',
+    { title: 'Fetch every repository the token above can see, via GET /user/repos' },
+    loadingLabel(state.loadingRepos, 'Loading…', 'Load my repos'),
+  );
   if (state.loadingRepos) loadReposBtn.setAttribute('disabled', 'true');
   loadReposBtn.onclick = () => loadUserRepos(tokenInput.value.trim());
   container.appendChild(
@@ -806,7 +872,7 @@ function renderConnectTab(): HTMLElement {
   );
   container.appendChild(datalist);
   if (state.reposError) {
-    container.appendChild(el('div', { className: 'status-banner error' }, [state.reposError]));
+    container.appendChild(statusBanner('error', [state.reposError]));
   } else if (state.availableRepos.length > 0) {
     container.appendChild(
       el('p', { className: 'hint' }, [`${state.availableRepos.length} repositor${state.availableRepos.length === 1 ? 'y' : 'ies'} loaded — selecting one fills in the fields below.`]),
@@ -847,12 +913,12 @@ function renderConnectTab(): HTMLElement {
     }
   };
 
-  const testBtn = el('button', { textContent: 'Test connection' });
+  const testBtn = el('button', {}, ['Test connection']);
   testBtn.onclick = async () => {
-    testBtn.textContent = 'Testing…';
+    testBtn.replaceChildren(...loadingLabel(true, 'Testing…', 'Test connection'));
     testBtn.setAttribute('disabled', 'true');
     state.connectStatus = await testConnection(readSettings());
-    testBtn.textContent = 'Test connection';
+    testBtn.replaceChildren(...loadingLabel(false, 'Testing…', 'Test connection'));
     testBtn.removeAttribute('disabled');
     render();
   };
@@ -864,9 +930,8 @@ function renderConnectTab(): HTMLElement {
     historyHeading.style.marginTop = '18px';
     container.appendChild(historyHeading);
     for (const entry of state.history.slice(0, 5)) {
-      const link = el('a', { href: entry.prUrl, target: '_blank', textContent: `PR #${entry.prNumber}` });
       container.appendChild(
-        el('div', { className: 'history-item' }, [`${new Date(entry.timestamp).toLocaleString()} — `, link]),
+        el('div', { className: 'history-item' }, [`${new Date(entry.timestamp).toLocaleString()} — `, prLink(entry.prUrl, entry.prNumber)]),
       );
     }
   }
@@ -1037,21 +1102,20 @@ function renderTokensTab(): HTMLElement {
 
 function renderValidationErrors(): HTMLElement | null {
   if (state.validationErrors.length === 0) return null;
-  const box = el('div', { className: 'status-banner error' });
-  box.appendChild(
+  const content: (Node | string)[] = [
     el('div', {}, [
       `${state.validationErrors.length} token reference problem${state.validationErrors.length === 1 ? '' : 's'} — these specific tokens need a manual choice below, everything else will sync normally:`,
     ]),
-  );
+  ];
   const list = el('ul');
   for (const e of state.validationErrors.slice(0, 10)) {
     list.appendChild(el('li', {}, [`${e.source} · ${e.category}/${e.key} — ${e.message}`]));
   }
-  box.appendChild(list);
+  content.push(list);
   if (state.validationErrors.length > 10) {
-    box.appendChild(el('div', {}, [`…and ${state.validationErrors.length - 10} more.`]));
+    content.push(el('div', {}, [`…and ${state.validationErrors.length - 10} more.`]));
   }
-  return box;
+  return statusBanner('error', content);
 }
 
 function renderSyncTab(): HTMLElement {
@@ -1071,7 +1135,7 @@ function renderSyncTab(): HTMLElement {
   container.appendChild(el('div', { className: 'btn-row' }, [compareBtn]));
 
   if (state.syncError) {
-    container.appendChild(el('div', { className: 'status-banner error' }, [state.syncError]));
+    container.appendChild(statusBanner('error', [state.syncError]));
     const guide = renderPermissionErrorGuide(state.syncError);
     if (guide) container.appendChild(guide);
   }
@@ -1085,7 +1149,7 @@ function renderSyncTab(): HTMLElement {
   if (state.diff.length > 0) {
     const changed = state.diff.filter((d) => d.status !== 'unchanged');
     if (changed.length === 0) {
-      container.appendChild(el('div', { className: 'status-banner success' }, ['Figma and GitHub are already in sync.']));
+      container.appendChild(statusBanner('success', ['Figma and GitHub are already in sync.']));
     } else {
       const addedCount = changed.filter((d) => d.status !== 'modified').length;
       const conflictCount = changed.filter((d) => d.status === 'modified' && !d.cascadeOnly).length;
@@ -1156,13 +1220,16 @@ function renderSyncTab(): HTMLElement {
       // conflict. Only genuinely unresolved conflicts block Sync.
       const remaining = unresolvedConflictCount();
       const blocked = remaining > 0 || state.syncing;
-      const syncBtn = el('button', {
-        className: 'cta',
-        textContent: state.syncing ? 'Opening pull request…' : 'Sync (open PR & update Figma)',
-        title: 'Applies your resolutions to Figma immediately, and opens a pull request against ' +
-          (state.settings?.branch ?? 'the configured branch') +
-          ' with the merged tokens — nothing is committed directly to that branch.',
-      });
+      const syncBtn = el(
+        'button',
+        {
+          className: 'cta',
+          title: 'Applies your resolutions to Figma immediately, and opens a pull request against ' +
+            (state.settings?.branch ?? 'the configured branch') +
+            ' with the merged tokens — nothing is committed directly to that branch.',
+        },
+        loadingLabel(state.syncing, 'Opening pull request…', 'Sync (open PR & update Figma)'),
+      );
       if (blocked) syncBtn.setAttribute('disabled', 'true');
       syncBtn.onclick = () => runSync();
       container.appendChild(el('div', { className: 'btn-row' }, [syncBtn]));
@@ -1189,7 +1256,9 @@ function renderSyncTab(): HTMLElement {
 // introducing new CSS for a one-off.
 function renderCascadeGroup(rows: DiffEntry[]): HTMLElement {
   const details = el('details', { className: 'setup-guide' });
-  details.appendChild(el('summary', {}, [`${rows.length} more auto-resolve — no action needed`]));
+  details.appendChild(
+    detailsSummary(details, [icon('ArrowsLeftRight', 'summary-icon', 13), `${rows.length} more auto-resolve — no action needed`]),
+  );
   const body = el('div', {});
   body.appendChild(
     el('p', { className: 'hint' }, [
@@ -1214,7 +1283,10 @@ function renderCascadeGroup(rows: DiffEntry[]): HTMLElement {
 function renderDiffRow(d: DiffEntry): HTMLElement {
   const row = el('div', { className: `diff-row status-${d.status}` });
   const badgeText = { 'added-figma': 'New in Figma', 'added-github': 'New in GitHub', modified: 'Conflict', unchanged: '' }[d.status];
-  row.appendChild(el('div', { className: 'diff-key' }, [d.key, el('span', { className: 'diff-badge' }, [badgeText])]));
+  const badgeIcon: IconName = d.status === 'modified' ? 'WarningCircle' : 'PlusCircle';
+  row.appendChild(
+    el('div', { className: 'diff-key' }, [d.key, el('span', { className: 'diff-badge' }, [icon(badgeIcon, undefined, 10), badgeText])]),
+  );
   row.appendChild(
     el('div', { className: 'diff-values' }, [
       diffValueLine('Figma', d.figmaDisplay, isReferenceToken(d.figmaValue)),
@@ -1261,8 +1333,8 @@ function renderDiffRow(d: DiffEntry): HTMLElement {
   return row;
 }
 
-const STORYBOOK_STATUS_COPY: Record<StorybookStatus, { cls: string; text: (() => string) | string }> = {
-  unknown: { cls: '', text: '' },
+const STORYBOOK_STATUS_COPY: Record<StorybookStatus, { cls: 'success' | 'error'; text: (() => string) | string }> = {
+  unknown: { cls: 'error', text: '' }, // unreachable — render site below is guarded by `!== 'unknown'`
   'in-sync': {
     cls: 'success',
     text: () =>
@@ -1303,7 +1375,7 @@ function renderPermissionErrorGuide(error: string): HTMLElement | null {
   if (!/403|not accessible/i.test(error)) return null;
 
   const details = el('details', { open: true, className: 'setup-guide' });
-  details.appendChild(el('summary', {}, ['How to fix this: grant the missing permission']));
+  details.appendChild(detailsSummary(details, ['How to fix this: grant the missing permission']));
 
   const body = el('div', {});
   body.appendChild(
@@ -1360,7 +1432,7 @@ function renderPermissionErrorGuide(error: string): HTMLElement | null {
 // and notify-on-sync.yml in the tokens repo.
 function renderNotificationsGuide(): HTMLElement {
   const details = el('details', { className: 'setup-guide' });
-  details.appendChild(el('summary', {}, ['Set up Teams or Slack notifications']));
+  details.appendChild(detailsSummary(details, ['Set up Teams or Slack notifications']));
 
   const body = el('div', {});
   body.appendChild(
@@ -1402,7 +1474,7 @@ function renderNotificationsGuide(): HTMLElement {
     ]),
   );
 
-  const testBtn = el('button', { textContent: state.notifyTestSending ? 'Sending…' : 'Send test notification' });
+  const testBtn = el('button', {}, loadingLabel(state.notifyTestSending, 'Sending…', 'Send test notification'));
   if (state.notifyTestSending) testBtn.setAttribute('disabled', 'true');
   testBtn.onclick = async () => {
     if (!state.settings) return;
@@ -1424,7 +1496,7 @@ function renderNotificationsGuide(): HTMLElement {
   body.appendChild(el('div', { className: 'btn-row' }, [testBtn]));
   if (state.notifyTestMessage) body.appendChild(el('p', { className: 'hint' }, [state.notifyTestMessage]));
   if (state.notifyTestError) {
-    body.appendChild(el('div', { className: 'status-banner error' }, [state.notifyTestError]));
+    body.appendChild(statusBanner('error', [state.notifyTestError]));
     const guide = renderPermissionErrorGuide(state.notifyTestError);
     if (guide) body.appendChild(guide);
   }
@@ -1440,7 +1512,7 @@ function renderStorybookGuide(): HTMLElement {
   const needsSetup = state.storybookStatus === 'never-built' || state.storybookStatus === 'error' || state.storybookStatus === 'unknown';
 
   const details = el('details', { open: needsSetup, className: 'setup-guide' });
-  details.appendChild(el('summary', {}, [needsSetup ? 'How to set up Storybook for this repo' : 'How to update Storybook']));
+  details.appendChild(detailsSummary(details, [needsSetup ? 'How to set up Storybook for this repo' : 'How to update Storybook']));
 
   const body = el('div', {});
   if (needsSetup) {
@@ -1491,16 +1563,13 @@ function renderStatusTab(): HTMLElement {
     return container;
   }
 
-  const refreshBtn = el('button', {
-    className: 'primary',
-    textContent: state.comparing ? 'Checking…' : 'Refresh status',
-  });
+  const refreshBtn = el('button', { className: 'primary' }, loadingLabel(state.comparing, 'Checking…', 'Refresh status'));
   if (state.comparing) refreshBtn.setAttribute('disabled', 'true');
   refreshBtn.onclick = () => runCompare();
   container.appendChild(el('div', { className: 'btn-row' }, [refreshBtn]));
 
   if (state.syncError) {
-    container.appendChild(el('div', { className: 'status-banner error' }, [state.syncError]));
+    container.appendChild(statusBanner('error', [state.syncError]));
     const guide = renderPermissionErrorGuide(state.syncError);
     if (guide) container.appendChild(guide);
   }
@@ -1521,19 +1590,18 @@ function renderStatusTab(): HTMLElement {
   const storybookInSync = state.storybookStatus === 'in-sync';
   const pairsInSync = (figmaGithubInSync ? 1 : 0) + (storybookInSync ? 1 : 0);
   container.appendChild(
-    el('div', { className: `status-banner ${pairsInSync === 2 ? 'success' : 'error'}` }, [
+    statusBanner(pairsInSync === 2 ? 'success' : 'error', [
       pairsInSync === 2
-        ? '✓ Figma, GitHub, and Storybook are all in sync.'
+        ? 'Figma, GitHub, and Storybook are all in sync.'
         : `${pairsInSync} of 2 sync relationships are up to date — see below.`,
     ]),
   );
 
   if (state.pendingPr) {
-    const link = el('a', { href: state.pendingPr.url, target: '_blank', textContent: `PR #${state.pendingPr.number}` });
+    const link = prLink(state.pendingPr.url, state.pendingPr.number);
     container.appendChild(
-      el(
-        'div',
-        { className: `status-banner ${state.pendingPr.state === 'open' ? '' : 'error'}` },
+      statusBanner(
+        state.pendingPr.state === 'open' ? 'info' : 'error',
         state.pendingPr.state === 'open'
           ? [link, ' is open and pending review. The differences below won\'t resolve until it\'s merged — that\'s expected, not an error.']
           : [link, ' was closed without merging. Re-run Sync below if these changes are still needed.'],
@@ -1543,10 +1611,10 @@ function renderStatusTab(): HTMLElement {
 
   container.appendChild(el('h2', {}, ['1. Figma ↔ GitHub']));
   if (figmaGithubInSync) {
-    container.appendChild(el('div', { className: 'status-banner success' }, ['Every token matches between Figma and GitHub.']));
+    container.appendChild(statusBanner('success', ['Every token matches between Figma and GitHub.']));
   } else {
     container.appendChild(
-      el('div', { className: 'status-banner error' }, [`${outOfSync.length} token(s) differ — see below.`]),
+      statusBanner('error', [`${outOfSync.length} token(s) differ — see below.`]),
     );
     const table = el('table', { className: 'token-table' });
     table.appendChild(
@@ -1575,38 +1643,31 @@ function renderStatusTab(): HTMLElement {
   if (state.storybookStatus !== 'unknown') {
     const info = STORYBOOK_STATUS_COPY[state.storybookStatus];
     const text = typeof info.text === 'function' ? info.text() : info.text;
-    container.appendChild(el('div', { className: `status-banner ${info.cls}` }, [text]));
+    container.appendChild(statusBanner(info.cls, [text]));
   }
 
-  const viewBtn = el('button', {
-    textContent: state.checkingLocalStorybook ? 'Checking…' : 'View Storybook (local)',
-    title: `Checks for a dev server at ${LOCAL_STORYBOOK_URL} and opens it if found. A plugin can't start the server itself — no shell access in either execution context.`,
-  });
+  const viewBtn = el(
+    'button',
+    { title: `Checks for a dev server at ${LOCAL_STORYBOOK_URL} and opens it if found. A plugin can't start the server itself — no shell access in either execution context.` },
+    loadingLabel(state.checkingLocalStorybook, 'Checking…', 'View Storybook (local)'),
+  );
   if (state.checkingLocalStorybook) viewBtn.setAttribute('disabled', 'true');
   viewBtn.onclick = () => viewLocalStorybook();
   container.appendChild(el('div', { className: 'btn-row' }, [viewBtn]));
 
   if (state.localStorybookReachable === true) {
     container.appendChild(
-      el('div', { className: 'status-banner success' }, [`Found it running at ${LOCAL_STORYBOOK_URL} — opened in your browser.`]),
+      statusBanner('success', [`Found it running at ${LOCAL_STORYBOOK_URL} — opened in your browser.`]),
     );
   } else if (state.localStorybookReachable === false) {
     const repoName = state.settings?.repo ?? 'design-tokens';
     const command = `cd ${repoName}\nnpm run storybook`;
-    const guide = el('div', { className: 'status-banner error' }, [
-      `Nothing's listening at ${LOCAL_STORYBOOK_URL}. Run this in a terminal, then click the button again:`,
-    ]);
-    container.appendChild(guide);
+    container.appendChild(
+      statusBanner('error', [`Nothing's listening at ${LOCAL_STORYBOOK_URL}. Run this in a terminal, then click the button again:`]),
+    );
     const commandRow = el('div', { className: 'btn-row' });
     commandRow.appendChild(el('pre', {}, [command]));
-    const copyBtn = el('button', { textContent: 'Copy' });
-    copyBtn.onclick = async () => {
-      const ok = await copyToClipboard(command);
-      copyBtn.textContent = ok ? 'Copied!' : 'Copy failed';
-      setTimeout(() => {
-        copyBtn.textContent = 'Copy';
-      }, 1500);
-    };
+    const copyBtn = copyButton(command);
     commandRow.appendChild(copyBtn);
     container.appendChild(commandRow);
   }
@@ -1622,11 +1683,14 @@ function renderStatusTab(): HTMLElement {
           ? "Couldn't determine Storybook status — see the error above before retrying."
           : 'Run "Refresh status" first so this can tell whether Storybook needs rebuilding.';
 
-  const deployBtn = el('button', {
-    className: 'primary',
-    textContent: state.storybookDeploying ? 'Triggering…' : 'Rebuild Storybook',
-    title: state.storybookDeploying ? 'Deploy already in progress' : (deployDisabledReason ?? 'Rebuild and redeploy Storybook from the latest tokens on GitHub'),
-  });
+  const deployBtn = el(
+    'button',
+    {
+      className: 'primary',
+      title: state.storybookDeploying ? 'Deploy already in progress' : (deployDisabledReason ?? 'Rebuild and redeploy Storybook from the latest tokens on GitHub'),
+    },
+    loadingLabel(state.storybookDeploying, 'Triggering…', 'Rebuild Storybook'),
+  );
   if (state.storybookDeploying || deployDisabledReason) deployBtn.setAttribute('disabled', 'true');
   deployBtn.onclick = () => deployStorybook();
   container.appendChild(el('div', { className: 'btn-row' }, [deployBtn]));
@@ -1635,10 +1699,10 @@ function renderStatusTab(): HTMLElement {
   }
 
   if (state.storybookDeployMessage) {
-    container.appendChild(el('div', { className: 'status-banner success' }, [state.storybookDeployMessage]));
+    container.appendChild(statusBanner('success', [state.storybookDeployMessage]));
   }
   if (state.storybookDeployError) {
-    container.appendChild(el('div', { className: 'status-banner error' }, [state.storybookDeployError]));
+    container.appendChild(statusBanner('error', [state.storybookDeployError]));
   }
 
   container.appendChild(renderStorybookGuide());
@@ -2073,18 +2137,18 @@ function renderHistoryTab(): HTMLElement {
     return container;
   }
 
-  const loadBtn = el('button', { className: 'primary', textContent: state.auditLogLoading ? 'Loading…' : 'Load history' });
+  const loadBtn = el('button', { className: 'primary' }, loadingLabel(state.auditLogLoading, 'Loading…', 'Load history'));
   if (state.auditLogLoading) loadBtn.setAttribute('disabled', 'true');
   loadBtn.onclick = () => loadAuditLog();
   container.appendChild(el('div', { className: 'btn-row' }, [loadBtn]));
 
   if (state.auditLogError) {
-    container.appendChild(el('div', { className: 'status-banner error' }, [state.auditLogError]));
+    container.appendChild(statusBanner('error', [state.auditLogError]));
     const guide = renderPermissionErrorGuide(state.auditLogError);
     if (guide) container.appendChild(guide);
   }
   if (state.syncError) {
-    container.appendChild(el('div', { className: 'status-banner error' }, [state.syncError]));
+    container.appendChild(statusBanner('error', [state.syncError]));
   }
 
   if (state.auditLog.length === 0) {
@@ -2110,20 +2174,24 @@ function renderHistoryTab(): HTMLElement {
         el('span', { className: 'diff-badge' }, [`${entry.changes.length} change${entry.changes.length === 1 ? '' : 's'}`]),
       ]),
     );
-    const prLink = el('a', { href: entry.prUrl, target: '_blank', textContent: `PR #${entry.prNumber}` });
-    item.appendChild(el('p', { className: 'hint' }, [prLink]));
+    item.appendChild(el('p', { className: 'hint' }, [prLink(entry.prUrl, entry.prNumber)]));
 
     const details = el('div', { className: 'diff-values' });
     for (const c of entry.changes) details.appendChild(renderAuditChangeRow(c));
     item.appendChild(details);
 
     const controls = el('div', { className: 'resolution-controls' });
-    const revertBtn = el('button', {
-      textContent: reverting ? 'Reverting…' : 'Revert this sync',
-      title: canRevert
-        ? 'Opens a new pull request restoring every token in this entry to its previous value.'
-        : "This sync added new tokens — revert isn't supported for additions yet. Remove them directly in GitHub if needed.",
-    });
+    const revertBtn = el(
+      'button',
+      {
+        title: canRevert
+          ? 'Opens a new pull request restoring every token in this entry to its previous value.'
+          : "This sync added new tokens — revert isn't supported for additions yet. Remove them directly in GitHub if needed.",
+      },
+      reverting
+        ? [icon('CircleNotch', 'spin', 13), 'Reverting…']
+        : [icon('ArrowCounterClockwise', undefined, 13), 'Revert this sync'],
+    );
     if (!canRevert || reverting || state.reverting) revertBtn.setAttribute('disabled', 'true');
     revertBtn.onclick = () => runRevert(entry);
     controls.appendChild(revertBtn);
@@ -2139,12 +2207,33 @@ function renderHistoryTab(): HTMLElement {
 // Boot
 // ---------------------------------------------------------------------------
 
+// Tab icons are injected here rather than duplicated as static SVG markup
+// in ui.template.html — icons.ts stays the single source of truth for what
+// each icon actually looks like.
+const TAB_ICONS: Record<Tab, IconName> = {
+  connect: 'Plug',
+  tokens: 'PencilSimple',
+  sync: 'ArrowsClockwise',
+  status: 'Pulse',
+  history: 'ClockCounterClockwise',
+};
+
 document.querySelectorAll<HTMLButtonElement>('.tab-btn').forEach((btn) => {
+  const tab = btn.dataset.tab as Tab | undefined;
+  if (tab && TAB_ICONS[tab]) {
+    const label = btn.textContent ?? '';
+    btn.textContent = '';
+    btn.appendChild(icon(TAB_ICONS[tab], undefined, 18));
+    btn.appendChild(el('span', { textContent: label }));
+  }
   btn.onclick = () => {
-    state.activeTab = (btn.dataset.tab as Tab) ?? 'connect';
+    state.activeTab = tab ?? 'connect';
     render();
   };
 });
+
+const appLogo = document.querySelector('.app-logo');
+if (appLogo) appLogo.replaceWith(icon('ArrowsClockwise', 'app-logo', 14));
 
 postToPlugin({ type: 'ui-ready' });
 render();
