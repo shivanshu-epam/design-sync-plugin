@@ -1,4 +1,4 @@
-# Design Sync — Extension Roadmap (Phases 1–17)
+# Design Sync — Extension Roadmap (Phases 1–23)
 
 **Purpose of this document**: This is a build-ready engineering specification for an LLM
 developer (or a human engineer) to implement, phase by phase, on top of the *existing*
@@ -9,9 +9,10 @@ needed, modifications to existing files where behavior changes, and explicit cal
 of exactly which existing function/tab/module each phase touches.
 
 **How to use this doc**: Each phase is self-contained enough to hand to an LLM as a
-single work order, but phases have real dependencies (see §20). Do not build Phase 7
+single work order, but phases have real dependencies (see §25). Do not build Phase 7
 before Phase 1. Do not build Phase 11 before Phase 1 and Phase 10. Do not build Phase 15
-before Phase 11. The dependency graph in §20 is authoritative if this doc and phase
+before Phase 11. Do not build Phase 21's screenshot step assuming Phase 18 exists — it
+doesn't require it. The dependency graph in §25 is authoritative if this doc and phase
 ordering ever seem to disagree.
 
 **Status and priority** (updated 2026-08-05, reflecting an explicit product decision —
@@ -102,7 +103,7 @@ Legend:
 | 2 | Bidirectional Variable write-back | ✅ Shipped | — (done) |
 | 3 | PR-based governed sync | ✅ Shipped | — (done) |
 | 4 | CI/CD automation | ✅ Shipped | — (done) |
-| 5 | Versioned audit trail and rollback | ✅ Shipped | — (done) |
+| 5 | Versioned audit trail and rollback | ✅ Shipped | 🔴 Open defect on shipped work — see the flagged note in §6 (Revert has no confirmation, no destructive styling) |
 | 6 | Multi-brand / multi-file orchestration | ❌ Not started | **Lowest — no current use case** (see §7's new-evidence note — a consultancy/agency buyer profile makes this look more load-bearing; priority not yet revisited) |
 | 7 | Semantic diff and AI-assisted conflict resolution | ❌ Not started | **Medium — not now** |
 | 8 | Cross-platform distribution (Style Dictionary) | ❌ Not started | **Lowest — no current use case** |
@@ -115,6 +116,12 @@ Legend:
 | 15 | Pre-sync blast-radius preview | ❌ Not started | Unprioritized (new, proposed 2026-08-05) — Blocked on Phase 11 regardless |
 | 16 | Concurrent-sync advisory lock | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
 | 17 | Deep-linking between Storybook/status page and Figma | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
+| 18 | Dedicated Storybook repo (split from `design-tokens`) | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
+| 19 | PR governance agent (policy-based auto-merge) | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
+| 20 | Notification routing — groups + urgency-based mentions | ❌ Not started | Unprioritized (new, proposed 2026-08-05) — extends Phase 9 |
+| 21 | SDLC / issue-tracker integration (JIRA, Planner) | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
+| 22 | In-plugin release notifications | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
+| 23 | Visual design language revamp (v2) | ❌ Not started, **unscoped** | Unprioritized — needs a direction decision before it can be scoped at all |
 
 Separately: the plugin's v1.12.0–v1.16.2 release series (icons, progressive disclosure,
 the full tab-by-tab UI redesign) is **not** one of these phases — it's an orthogonal
@@ -624,6 +631,35 @@ jobs:
 
 **Status**: ✅ Shipped (v1.6.0; UI redesigned v1.16.0–v1.16.2). **Priority**: — (done).
 
+> **🔴 Open defect, flagged 2026-08-05 — not a new phase, a gap in what's already
+> shipped.** User's own words: "the revert sync feature, its not UX friendly... a
+> complete miss right now." Confirmed against the current code
+> (`ui.ts`, History tab, ~line 2506):
+> - `revertBtn` uses plain default button styling — no `danger`/destructive
+>   treatment exists anywhere in this app's button system today (`grep`-confirmed:
+>   there is no `.danger` button class, despite a `--danger` color token already
+>   existing for banners). A revert is a consequential, PR-opening action; visually
+>   it reads identically to any other button.
+> - `revertBtn.onclick = () => runRevert(entry)` fires **immediately** — no
+>   confirmation step at all. Every other consequential action in this app (Sync
+>   itself, opening a PR) at minimum shows its own effects before committing; Revert
+>   skips that entirely, which is inconsistent with the project's own standing "no
+>   silent auto-resolution" principle.
+>
+> **Fix, scoped small (no dependencies, do this before anything else on this list):**
+> 1. Add a `button.danger` variant to `ui.template.html` (reuses the existing
+>    `--danger`/`--danger-hover` tokens already defined for banners — no new colors
+>    needed) and apply it to `revertBtn`.
+> 2. Add a confirmation step before `runRevert(entry)` fires — inline (expand the
+>    button into a "Confirm revert / Cancel" pair on first click, matching this app's
+>    existing preference for inline over modal dialogs) or a `persistentDetails`-style
+>    expand — showing: which PR will be opened, how many tokens revert, and their
+>    before/after values (already available — `entry.changes`, the same data
+>    `renderAuditChangeRow` already renders elsewhere on this exact row).
+> 3. Acceptance: clicking "Revert this sync" no longer opens a PR on the first click;
+>    a second, explicit confirmation is required; the button reads as visually
+>    distinct (red) from every non-destructive action on the page.
+
 ### Goal
 A structured, queryable history of every sync event (who, what tokens, from where, when),
 plus a rollback capability in the plugin UI — going beyond "read `git log` yourself."
@@ -833,7 +869,7 @@ interface ConnectionConfig {
 ## 8. Phase 7 — Semantic diff and AI-assisted conflict resolution
 
 **Status**: ❌ Not started. **Priority**: **Medium — not now.** Real, worth doing once
-token sets are large enough (post multi-brand, per §21's build order) to justify it —
+token sets are large enough (post multi-brand, per §26's build order) to justify it —
 deliberately not picked up yet (2026-08-05).
 
 ### Goal
@@ -1939,7 +1975,388 @@ column/icon-link in whatever token-documentation view Storybook already renders 
 
 ---
 
-## 19. Cross-phase dependency graph
+## 19. Phase 18 — Dedicated Storybook repo
+
+**Status**: ❌ Not started (new, proposed 2026-08-05). **Priority**: Unprioritized.
+
+### Goal
+Split Storybook out of the `design-tokens` repo into its own repository, so the tokens
+repo stays a lean, single-purpose source of truth (just `design-tokens.json` +
+validation) and Storybook's own dependency tree (React, Vite, Storybook + addons)
+doesn't bloat or complicate it.
+
+### Problem addressed
+User's own framing: keep it scalable, without adding complexity. Today `design-tokens`
+conflates two different concerns in one repo/one `package.json`: the data source of
+truth, and a documentation site with its own framework, build tooling, and addon
+dependencies. As the token set or Storybook's own tooling grows, every consumer who
+only wants the JSON pays for the documentation site's dependency weight too, and PR
+review noise mixes token changes with any docs-site-only change.
+
+### Dependencies
+Needs Phase 4 (CI/CD, shipped) — this splits its existing `ci.yml`/`deploy-
+storybook.yml` across two repos instead of one. No dependency on any unshipped phase.
+
+### Repo layout
+
+```
+design-tokens/                 (existing, trimmed)
+  design-tokens.json
+  .design-sync/audit-log.jsonl
+  .storybook-sync.json
+  scripts/validate-tokens.mjs
+  .github/workflows/ci.yml     (validate only, no Storybook build)
+
+design-tokens-storybook/       (NEW)
+  .storybook/
+  src/stories/*.stories.tsx
+  src/tokens.ts                 (fetches design-tokens.json from the OTHER repo
+                                  at build time — a raw-content fetch, not a copy)
+  package.json                  (Storybook + React + addon deps, fully isolated)
+  .github/workflows/
+    build-and-deploy.yml        (see trigger, below)
+```
+
+### Algorithm — cross-repo trigger
+Token changes still land in `design-tokens` via the existing sync PR flow, unchanged.
+To rebuild the now-separate Storybook: on merge to `design-tokens`'s main branch, its
+CI fires a `repository_dispatch` event at `design-tokens-storybook`, which runs its own
+build + deploy — same effect as today's single-repo `deploy-storybook.yml`, just
+crossing a repo boundary. The plugin's "Rebuild Storybook" button targets the new
+repo's workflow via `workflow_dispatch` instead of (or in addition to) the old one.
+
+### Plugin-side change
+`GithubSettings` gains an optional `storybookRepo` field — **absent means "same repo as
+design-tokens.json,"** which is today's exact behavior, so every existing single-repo
+setup keeps working with zero migration. Only a team that explicitly wants the split
+sets it. Connect tab: a new optional field, collapsed behind the same "Enter repository
+manually" disclosure pattern already used for owner/repo/branch/path.
+
+### Acceptance criteria
+- A token sync PR merging in `design-tokens` triggers a Storybook rebuild in
+  `design-tokens-storybook` with no manual step.
+- The Status tab's three-way health check reads the marker + Pages deployment status
+  from the correct repo (the separate one, if configured).
+- An existing single-repo setup (`storybookRepo` unset) behaves identically to today,
+  with no user action required.
+
+### Rejected alternatives
+- **npm-publish `design-tokens.json` as a package Storybook installs.** Rejected: adds
+  a publish/versioning step for what's fundamentally a raw data fetch; a direct GitHub
+  raw-content fetch at build time needs no registry.
+- **Git submodule.** Rejected: a well-known source of contributor confusion (stale
+  pointers, easy to forget `--recurse-submodules`) — not worth it for one JSON file.
+
+---
+
+## 20. Phase 19 — PR governance agent (policy-based auto-merge)
+
+**Status**: ❌ Not started (new, proposed 2026-08-05). **Priority**: Unprioritized.
+
+### Goal
+An automated agent that reviews open sync PRs against a declared, committed policy and
+merges the ones that clearly qualify — reducing the manual-merge bottleneck for
+low-risk syncs while keeping genuinely risky changes gated on a human.
+
+### Problem addressed
+User's own framing: "find and merge the open PR, kind of governance skill, based on
+data, we can put some kind of authentication for it." Today every sync PR sits for
+manual review regardless of risk — a single color nudged by a trusted designer, with no
+conflicts and only cascade-only downstream effects, waits exactly as long as a 200-token
+conflict-heavy change. For the consultancy/agency profile identified in Phase 6's
+new-evidence note (many simultaneous client repos), this manual bottleneck is the actual
+reason "governance" has to mean more than "sync," not less.
+
+### Dependencies
+Requires Phase 3 (PR-based sync, shipped) and Phase 5 (audit log, shipped — the policy
+engine reads the audit entry's `changes` array to classify risk). Related to Phase 13
+(contrast linting) and Phase 7 (AI-assisted diff) as future additional signals; neither
+is required for a v1.
+
+### Data model — policy file, committed to the tokens repo (reviewable via PR, same as
+everything else in this system)
+
+```yaml
+# .design-sync/merge-policy.yml
+autoMergeWhen:
+  - allChangesCascadeOnly: true
+  - authorIn: ["known-designer-1", "known-designer-2"]
+  - ciChecksPass: true
+  - noValidationErrors: true
+neverAutoMergeWhen:
+  - touchesCategory: ["color"]     # example: always human-reviewed; spacing might not be
+  - changeCount: ">50"             # large blast-radius syncs always reviewed
+```
+
+### Algorithm
+1. New workflow (`governance-agent.yml`), triggered on `pull_request` for
+   `design-sync/sync-*` branches only — never runs against a human-authored PR.
+2. Reads `merge-policy.yml` + the matching audit-log entry for this PR.
+3. Any `neverAutoMergeWhen` match short-circuits to "leave for human review," with a PR
+   comment explaining which rule fired. Otherwise, if every `autoMergeWhen` condition
+   holds, the workflow approves and merges via a **separate, narrowly-scoped bot
+   credential** — not a human's PAT.
+4. Every decision (merged or deferred) is posted as a PR comment naming the rule that
+   fired — inspectable after the fact, never a silent black box.
+
+### Authentication (the user's own callout)
+This must run as a distinct identity from any human's PAT. A **GitHub App installation
+token** is the right mechanism — scoped, short-lived, independently revocable, and shows
+up in PR history as "merged by [App Name]," never impersonating a person. This is a
+meaningfully different auth model from everything else in this project (all PAT-based
+today) — flagged explicitly as new surface area, not an incremental extension.
+
+### UI changes
+A small "Governance" section (Status tab, or its own) listing recent auto-merge
+decisions — reuses History's existing audit-entry-row component, tagged with an
+"auto-merged by policy" badge distinct from human-merged entries.
+
+### Acceptance criteria
+- A cascade-only, no-conflict PR from a trusted actor merges within one CI run, zero
+  human action, attributed to the bot identity.
+- A PR touching `color` (per the example policy) is never auto-merged regardless of
+  other conditions, with a clear comment explaining why it's waiting.
+- Changing merge rules is itself a reviewable PR against `merge-policy.yml` — no
+  separate admin UI for policy.
+
+### Rejected alternatives
+- **Auto-merge based on an LLM confidence score alone.** Rejected as the sole gate —
+  too opaque, and contradicts this project's standing "no silent auto-resolution"
+  principle. A declarative, human-authored policy (that an LLM could *assist* writing,
+  future Phase 7 tie-in) is safer than an LLM directly deciding merge-worthiness.
+- **Auto-merge using the requesting user's own PAT.** Rejected: conflates "this person
+  can sync" with "this bot can auto-approve," and makes the audit trail lie about who
+  actually approved the merge.
+
+---
+
+## 21. Phase 20 — Notification routing: groups + urgency-based mentions
+
+**Status**: ❌ Not started (new, proposed 2026-08-05). **Priority**: Unprioritized —
+extends Phase 9 (shipped), not a new mechanism.
+
+### Goal
+Post sync notifications to a team/group channel and @-mention the right point of
+contact directly, scaled by urgency — a routine cascade-only sync posts quietly; a
+conflict-heavy or color-category change pings the design lead directly.
+
+### Problem addressed
+User's own framing: "sending notification on channel in teams, can we do it for a group
+and can tag the right PoC directly based on urgency?" Today's `notify-on-sync.mjs`
+posts one flat message to one webhook, no routing logic, no distinction between "FYI"
+and "someone should look at this now."
+
+### Dependencies
+Requires Phase 9 (notifications, shipped) — a direct extension. Reuses the exact policy-
+file pattern introduced in Phase 19 above rather than inventing a second config format.
+
+### Data model
+
+```yaml
+# .design-sync/notify-routing.yml
+default:
+  channel: "#design-tokens"
+escalate:
+  - when: { touchesCategory: ["color"], hasConflicts: true }
+    mention: ["@design-lead"]
+    channel: "#design-tokens-urgent"
+  - when: { changeCount: ">50" }
+    mention: ["@design-lead", "@eng-lead"]
+```
+
+### Algorithm
+`notify-on-sync.mjs` (already reads the audit entry) gains a routing step: evaluate
+`notify-routing.yml` top-to-bottom, use the first match's channel + mentions, fall back
+to `default`. Teams/Slack mentions need resolving a human-readable handle to the
+platform's real mention syntax (`<at>Name</at>` for Teams Adaptive Cards, `<@USERID>`
+for Slack) — a plain "@design-lead" string notifies nobody on either platform, so a
+small handle → platform-ID mapping table is required, not optional.
+
+### UI changes
+Connect tab's existing Notifications guide gains a collapsed "Routing rules (optional)"
+sub-section, linking to editing `notify-routing.yml` directly on GitHub — consistent
+with this project's pattern of team-shared config living in a reviewable file, not a
+plugin-side form.
+
+### Acceptance criteria
+- A routine sync posts to the default channel with no mention.
+- A color-category sync with unresolved conflicts posts to the escalation channel and
+  correctly @-mentions the configured PoC in each platform's real mention format.
+- A malformed or missing routing file falls back to today's flat single-channel
+  behavior rather than failing the notification outright.
+
+### Rejected alternatives
+- **Build routing/mention config into the plugin's own UI instead of a committed YAML
+  file.** Rejected: breaks from this project's "team-shared config lives in a
+  reviewable file" pattern, and would require the plugin to somehow maintain a
+  Teams/Slack user directory — not this plugin's problem to own.
+
+---
+
+## 22. Phase 21 — SDLC / issue-tracker integration (JIRA, Teams Planner)
+
+**Status**: ❌ Not started (new, proposed 2026-08-05). **Priority**: Unprioritized.
+
+### Goal
+Every sync creates or updates a tracked work item (JIRA ticket or Planner task)
+automatically — comments, status transitions, and a screenshot of the actual visual
+change attached — so a token change carries the same change-tracking discipline as any
+other SDLC change.
+
+### Problem addressed
+User's own framing: "if we look for SDLC, nobody make changes in colors randomly,
+there is always a track for it." Phase 5's audit trail is real but self-contained —
+invisible to whatever ticketing system the rest of the org already runs sprints on. No
+way to see "which ticket is this token change part of," and no way for a sync to
+participate in an existing status workflow (In Review → Done).
+
+### Dependencies
+Requires Phase 5 (audit log — the event source, same as notifications). Pairs naturally
+with Phase 19's governance agent — screenshot capture + comment-posting is the same
+class of "agent acting on the repo's behalf," likely the same GitHub App identity.
+
+### Data model
+
+```yaml
+# .design-sync/issue-tracker.yml
+provider: jira   # or "planner"
+projectKey: DS
+linkField: "design-sync.ticketRef"   # read from a token's $extensions, if set manually
+```
+
+### Algorithm
+1. On sync PR open (same trigger as notifications): if the PR's changed tokens carry a
+   `design-sync.ticketRef` extension (same mechanism as Phase 14's deprecation
+   metadata), comment on that **existing** ticket instead of creating a new one.
+2. Otherwise, create a new ticket via JIRA's REST API (`POST /rest/api/3/issue`) or
+   Planner's Graph API (`POST /planner/tasks`), titled from the audit-entry summary,
+   linked back to the PR.
+3. Attach a screenshot: the Storybook build (Phase 18's dedicated repo, or today's) can
+   render the changed token(s) headlessly (Storybook's own test-runner/Playwright
+   integration — already common, not new infrastructure) and upload the result as a
+   ticket attachment.
+4. On PR merge, transition the ticket (→ "Done"/"Deployed"); on close-without-merge,
+   transition to a "Rejected" equivalent.
+
+### Credentials
+A JIRA API token or a Planner (Microsoft Graph) app registration — a **third** distinct
+credential type in this system, alongside the GitHub PAT and Phase 19's GitHub App.
+Stored the same way Teams/Slack webhook URLs already are: a repo secret, never touching
+the plugin/Figma side — consistent with Phase 9's existing decision that a team-shared
+credential doesn't belong in per-machine `clientStorage`.
+
+### UI changes
+Connect tab's setup guide gains a third optional collapsed section ("Issue tracking
+(optional)"), documenting the secrets needed and the `issue-tracker.yml` file, same
+"paste this here" pattern as Notifications. History tab: an entry with a linked ticket
+shows a small ticket-ID chip + link next to the existing PR link.
+
+### Acceptance criteria
+- A sync PR with no existing ticket reference creates one, with a rendered screenshot
+  attached and a link back to the PR.
+- A sync referencing an existing ticket comments on it instead of duplicating.
+- Merging the PR transitions the ticket status automatically.
+- The plugin itself never sees or stores the JIRA/Planner credential — same trust
+  boundary already established for notification webhooks.
+
+### Rejected alternatives
+- **Have the plugin call JIRA/Planner directly from `ui.ts`.** Rejected for the same
+  reason Phase 9 rejected the plugin calling Slack directly — a team-shared credential
+  doesn't belong in per-machine `clientStorage`; CI is the correct place.
+- **Require every sync to have a ticket before it can merge.** Rejected as a hard gate
+  — some teams' SDLC won't want every token nudge blocked on ticket creation.
+  Auto-creation is opt-in via the config file's presence, not a blocking check.
+
+---
+
+## 23. Phase 22 — In-plugin release notifications
+
+**Status**: ❌ Not started (new, proposed 2026-08-05). **Priority**: Unprioritized.
+
+### Goal
+When a new plugin version ships, users see a clear in-app notice — what changed, and a
+prompt to update — instead of silently running a stale version indefinitely.
+
+### Problem addressed
+User's own framing: "whenever we are making changes, in plugin we want to give
+notification for the new release, on whats changed, etc." Today a user must manually
+close and relaunch the plugin to pick up any update at all (Figma only reads `code.js`/
+`ui.html` at launch), with zero in-app visibility into whether they're stale or what
+changed if they do relaunch — they'd have to read `CHANGELOG.md` on GitHub themselves.
+
+### Dependencies
+None technical — fully independent, buildable anytime.
+
+### Two real scenarios, genuinely different handling
+1. **Published to Figma Community** (if this project ever gets there): Figma itself
+   auto-updates on next launch; this phase narrows to "show a changelog on first launch
+   after an update," using `figma.clientStorage` to remember the last-seen version and
+   diff against the current build — no network call needed.
+2. **Manifest-loaded / internal distribution** (this project's actual mode, per every
+   setup doc today): no platform auto-update exists at all. The plugin checks a known
+   location for the latest version — `GET /repos/{owner}/{plugin-repo}/releases/latest`,
+   reusing the existing `githubRequest` plumbing — surfaced as a dismissible banner
+   linking to release notes, **explicit that the user still has to pull + rebuild +
+   relaunch manually** (no shell access, same honest-constraint pattern as every other
+   "can't automate this" moment already in this project).
+
+### UI changes
+A new banner (reuses `statusBanner`) on whichever tab is active, shown once per
+newer-version-seen (dismissible, tracked in `clientStorage` so it doesn't repeat), with
+a "What's new" `persistentDetails` expansion pulling the relevant `CHANGELOG.md`
+section.
+
+### Acceptance criteria
+- A user on an old version sees a dismissible "update available" banner with a real
+  changelog summary, not a bare version number.
+- Dismissing it doesn't resurface it for that same version.
+- The banner is honest about what the user still has to do manually — never implies a
+  one-click update that doesn't exist in this distribution mode.
+
+### Rejected alternatives
+- **Auto-reload the plugin UI on detecting a new version.** Rejected: no such API
+  exists, and even if it did, silently swapping code under an active session
+  contradicts this project's pattern everywhere else of user-initiated, not surprising,
+  state changes.
+
+---
+
+## 24. Phase 23 — Visual design language revamp (v2)
+
+**Status**: ❌ Not started, **deliberately unscoped** (new, proposed 2026-08-05).
+**Priority**: Unprioritized — cannot be scoped further until a direction is chosen.
+
+### Goal
+A second visual-identity pass, beyond the icon/progressive-disclosure IA work already
+shipped (v1.12.0–v1.18.0) — a more considered, "cleaner and more visually friendly"
+design language: refined type scale, more deliberate spacing rhythm, possibly a
+lighter/more modern component style than today's dense, dev-tool-utilitarian look.
+
+### Problem addressed
+User's own framing: "Revamp the design, to new design language, more clean, and visual
+friendly." Explicitly a follow-on to, not a replacement of, the shipped redesign pass —
+that work fixed information architecture and hierarchy (icons, disclosure, tags); it
+deliberately did not rethink the underlying visual language itself (palette, type
+scale, spacing system) beyond what was needed to support those IA fixes.
+
+### Why this section has no algorithm/data-model/acceptance-criteria subsections
+Every other phase in this document specifies a concrete build. This one can't yet — it
+needs a real design exploration, not a spec written speculatively ahead of a direction
+decision, the same way the *first* visual pass this session started with a UX-expert
+critique and two clarifying questions before any code was touched (see this session's
+own history: palette direction, then tab-scope, decided before implementation began).
+
+### Recommended next step, not a build step
+Before scoping further: pick 2–3 concrete directions to compare — for example,
+"lighter/more whitespace-driven," "more saturated/branded," or "keep the current
+dev-tool-dense feel but refine only type/spacing" — the same lightweight
+question-then-decide process already used once in this project. Scoping this properly
+(files touched, acceptance criteria) is the *next* phase-writing pass, once that
+decision exists.
+
+---
+
+## 25. Cross-phase dependency graph
 
 ```
 Phase 1 (token model) ───────┬──────────────────────────────────────────┐
@@ -1974,9 +2391,24 @@ Phase 12 (PR previews) — needs Phase 3 + Phase 4. [UNPRIORITIZED]
 Phase 13 (contrast lint) — needs Phase 1, pairs with Phase 4. [UNPRIORITIZED]
 Phase 14 (deprecation lifecycle) — needs Phase 1, complements Phase 11. [UNPRIORITIZED]
 Phase 17 (Figma deep-links) — needs Phase 1 + Phase 4. [UNPRIORITIZED]
+
+Phase 18 (dedicated Storybook repo) — needs Phase 4. [UNPRIORITIZED]
+   └─► Phase 21 (SDLC/issue-tracker) — screenshot step benefits from 18, not required.
+
+Phase 19 (governance agent) — needs Phase 3 + Phase 5. [UNPRIORITIZED]
+   ├─► Phase 21 (SDLC/issue-tracker) — same "agent acting on the repo" identity.
+   └─► Phase 7 (AI diff) — a mature policy engine could consume Phase 7's signals later.
+
+Phase 20 (notification routing) — needs Phase 9 (notifications half). [UNPRIORITIZED]
+   reuses Phase 19's policy-file pattern, but does NOT require Phase 19 itself.
+
+Phase 21 (SDLC/issue-tracker) — needs Phase 5. [UNPRIORITIZED]
+Phase 22 (in-plugin release notices) — no dependencies, fully independent. [UNPRIORITIZED]
+Phase 23 (visual design v2) — no technical dependencies, but UNSCOPED until a
+   direction is chosen. Not sequenced against anything else.
 ```
 
-## 20. Suggested build order
+## 26. Suggested build order
 
 Reflects the 2026-08-05 priority decisions above — phases marked Lowest/Medium/Blocked
 are listed for completeness, not as a recommendation to pick them up now.
@@ -1984,32 +2416,61 @@ are listed for completeness, not as a recommendation to pick them up now.
 **Shipped** (for reference, not re-sequencing): Phase 1 → Phase 4 → Phase 3 → Phase 5 →
 Phase 2 → Phase 9 (notifications half only).
 
-**If/when work resumes**, in dependency-respecting order:
+**Do first, ahead of any new phase** — this is a defect on already-shipped work, not
+new capability, and it's small:
+
+0. **Phase 5's Revert UX fix** (see the flagged note in §6) — a `button.danger` variant
+   plus a confirmation step before `runRevert` fires. No dependencies, touches one
+   existing screen, and it's the one item on this whole list a user explicitly called
+   "a complete miss."
+
+**If/when work resumes on new phases**, in dependency-respecting order:
 
 1. **Phase 16 (concurrent-sync advisory lock)** — needs only Phase 3 (shipped), cheapest
    remaining phase relative to payoff: closes a real, documented known-limitation with
    one read-only API call and one banner, no new infrastructure.
-2. **Phase 12 (PR preview builds)** — needs Phase 3 + 4 (both shipped), pure CI addition,
+2. **Phase 22 (in-plugin release notifications)** — no dependencies at all, independent
+   of every other phase, purely additive. A good second pick for the same reason as #1:
+   cheap, self-contained, immediately useful regardless of what else is being built.
+3. **Phase 12 (PR preview builds)** — needs Phase 3 + 4 (both shipped), pure CI addition,
    no plugin code changes required for a v1 (the PR comment alone suffices).
-3. **Phase 13 (contrast/accessibility linting)** — needs Phase 1 (shipped), pairs
+4. **Phase 13 (contrast/accessibility linting)** — needs Phase 1 (shipped), pairs
    directly with the existing `validate-tokens.mjs` CI step.
-4. **Phase 14 (token deprecation lifecycle)** — needs Phase 1 (shipped), stands alone
+5. **Phase 14 (token deprecation lifecycle)** — needs Phase 1 (shipped), stands alone
    without Phase 11 but is most valuable once Phase 11 exists.
-5. **Phase 17 (Figma deep-linking)** — needs Phase 1 + 4 (both shipped), Storybook-only
+6. **Phase 17 (Figma deep-linking)** — needs Phase 1 + 4 (both shipped), Storybook-only
    change, zero plugin-side risk.
-6. **Phase 6 (multi-brand)** — currently **lowest priority, no known use case**. Only
-   pick this up if a genuine multi-brand/multi-repo need materializes.
-7. **Phase 8 (cross-platform/Style Dictionary)** — currently **lowest priority, no known
-   use case**. Only pick this up if native-platform (iOS/Android) demand shows up.
-8. **Phase 7 (AI-assisted diff)** — currently **medium, not now**. Highest payoff once
-   token sets are large (post multi-brand) — revisit once Phase 6 is either done or
-   confirmed permanently out of scope.
-9. **Phase 10 (backend/platform layer)** — currently **medium, not now**. The capstone;
-   revisit only once file/CI-based state genuinely stops scaling for the org.
-10. **Phase 11 (drift detection)** — blocked on Phase 10. Not actionable until Phase 10
+7. **Phase 18 (dedicated Storybook repo)** — needs Phase 4 (shipped). Worth doing before
+   Phase 21, since Phase 21's screenshot step is cleaner once Storybook already lives in
+   its own build context — but not a hard blocker either way.
+8. **Phase 20 (notification routing)** — needs Phase 9's notifications half (shipped).
+   Self-contained extension; doesn't require Phase 19 despite sharing its policy-file
+   *pattern*.
+9. **Phase 19 (governance agent)** — needs Phase 3 + 5 (both shipped). Bigger than #1–8
+   above — new auth surface (a GitHub App, not a PAT) — sequence after the smaller wins
+   so the team has full context on the repo before adding a new credential type.
+10. **Phase 21 (SDLC/issue-tracker integration)** — needs Phase 5 (shipped), pairs
+    naturally with Phase 19's agent identity once that exists.
+11. **Phase 6 (multi-brand)** — **lowest priority, but re-flagged** (§7's new-evidence
+    note): revisit if a consultancy/agency-style multi-client need shows up, which this
+    project's own test data suggests isn't hypothetical.
+12. **Phase 8 (cross-platform/Style Dictionary)** — currently **lowest priority, no known
+    use case**. Only pick this up if native-platform (iOS/Android) demand shows up.
+13. **Phase 7 (AI-assisted diff)** — currently **medium, not now**. Highest payoff once
+    token sets are large (post multi-brand) — revisit once Phase 6 is either done or
+    confirmed permanently out of scope.
+14. **Phase 10 (backend/platform layer)** — currently **medium, not now**. The capstone;
+    revisit once file/CI-based state genuinely stops scaling, or once Phase 19's PAT-scope
+    growth pain (§1b) makes scoped API tokens worth building sooner.
+15. **Phase 11 (drift detection)** — blocked on Phase 10. Not actionable until Phase 10
     is picked back up.
-11. **Phase 15 (blast-radius preview)** — blocked on Phase 11 (and therefore transitively
+16. **Phase 15 (blast-radius preview)** — blocked on Phase 11 (and therefore transitively
     on Phase 10). Last in the chain by construction.
+
+**Phase 23 (visual design v2)** is intentionally absent from this ordered list — it
+isn't blocked on anything technical, but it can't be sequenced against build-order
+until a direction is chosen (see its own section). Could reasonably happen in parallel
+with any of the above once scoped.
 
 ---
 
