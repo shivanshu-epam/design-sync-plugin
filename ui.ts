@@ -31,6 +31,17 @@ import {
 } from './sync-logic';
 import { iconSvg, type IconName } from './icons';
 
+// Injected at build time by scripts/build-ui.mjs via esbuild's `define` —
+// the same package.json version already baked into the footer's HTML text,
+// exposed here as a real value so this file's own code (the update-check
+// banner) can compare against it, not scrape the DOM for it.
+declare const __APP_VERSION__: string;
+
+// This plugin's OWN repo — distinct from state.settings, which points at
+// whatever tokens repo the user has connected. Checking for a plugin
+// update never depends on a repo connection existing at all.
+const PLUGIN_REPO = { owner: 'shivanshu-epam', repo: 'design-sync-plugin' };
+
 // ---------------------------------------------------------------------------
 // Messaging with code.ts
 // ---------------------------------------------------------------------------
@@ -69,6 +80,17 @@ window.onmessage = (event: MessageEvent) => {
     case 'init':
       state.settings = msg.settings;
       state.history = msg.history;
+      state.dismissedUpdateVersion = msg.dismissedUpdateVersion;
+      // Fire-and-forget — never blocks init, never blocks the rest of this
+      // handler. A slow or failed check (offline, repo not public yet, rate
+      // limited) just means no banner shows, not a hang or an error state
+      // anywhere else in the app.
+      fetchLatestPluginRelease().then((release) => {
+        if (release) {
+          state.latestPluginRelease = release;
+          render();
+        }
+      });
       if (isConfigured(state.settings)) {
         // Already connected — jump straight to the diff instead of making
         // the user click "Fetch & compare" every time they open the plugin.
@@ -175,6 +197,15 @@ const state: {
   notifyTestSending: boolean;
   notifyTestMessage: string | null;
   notifyTestError: string | null;
+  // Set once fetchLatestPluginRelease() finds a version newer than
+  // __APP_VERSION__ — null means "nothing newer found (or check hasn't
+  // resolved / failed / repo not public yet)," never a false "up to date"
+  // claim, since a failed check simply never sets this at all.
+  latestPluginRelease: { version: string; changelogEntry: string } | null;
+  // Loaded from clientStorage at init — the last version the user actually
+  // dismissed the banner for, so it doesn't resurface on every relaunch
+  // once seen (but does resurface again for the NEXT version after that).
+  dismissedUpdateVersion: string | null;
   // Connect tab: false + already configured => show the compact status
   // card instead of the full form. Global state, not a local closure
   // variable — render() rebuilds this tab's DOM from scratch on every
@@ -233,6 +264,8 @@ const state: {
   notifyTestSending: false,
   notifyTestMessage: null,
   notifyTestError: null,
+  latestPluginRelease: null,
+  dismissedUpdateVersion: null,
   connectEditing: false,
   openDetails: {},
 };
@@ -469,6 +502,60 @@ async function fetchPagesStatus(settings: GithubSettings): Promise<PagesStatus> 
   }
 
   return { configured: true, url: typeof pages.html_url === 'string' ? pages.html_url : null, lastBuildAt };
+}
+
+// ---------------------------------------------------------------------------
+// In-plugin release notices (Phase 22)
+// ---------------------------------------------------------------------------
+
+// Pulls the section for `version` out of a CHANGELOG.md that follows this
+// project's own "## [X.Y.Z] - YYYY-MM-DD" convention. Returns '' (not an
+// error) if the version isn't found — a missing changelog entry shouldn't
+// block showing the version-number banner itself.
+function extractChangelogSection(changelog: string, version: string): string {
+  const marker = `## [${version}]`;
+  const start = changelog.indexOf(marker);
+  if (start === -1) return '';
+  const rest = changelog.slice(start);
+  const nextHeading = rest.indexOf('\n## [', 1);
+  return (nextHeading === -1 ? rest : rest.slice(0, nextHeading)).trim();
+}
+
+// Deliberately UNauthenticated — this checks the plugin's own repo, not the
+// user's connected tokens repo, and must work whether or not a repo is even
+// connected yet. Requires design-sync-plugin to be a PUBLIC repo; on a 404
+// (private, or briefly unreachable) this fails silently and no banner shows
+// — never surfaced as an error state anywhere else in the app, since "can't
+// check for updates right now" isn't something worth interrupting anyone
+// over.
+async function fetchLatestPluginRelease(): Promise<{ version: string; changelogEntry: string } | null> {
+  try {
+    const pkgRes = await fetch(`${GITHUB_API}/repos/${PLUGIN_REPO.owner}/${PLUGIN_REPO.repo}/contents/package.json`, {
+      cache: 'no-store',
+    });
+    if (!pkgRes.ok) return null;
+    const pkgBody = await pkgRes.json();
+    const pkg = JSON.parse(decodeBase64Utf8(pkgBody.content)) as { version?: string };
+    const latestVersion = pkg.version;
+    if (!latestVersion || latestVersion === __APP_VERSION__) return null;
+
+    let changelogEntry = '';
+    try {
+      const changelogRes = await fetch(
+        `${GITHUB_API}/repos/${PLUGIN_REPO.owner}/${PLUGIN_REPO.repo}/contents/CHANGELOG.md`,
+        { cache: 'no-store' },
+      );
+      if (changelogRes.ok) {
+        const changelogBody = await changelogRes.json();
+        changelogEntry = extractChangelogSection(decodeBase64Utf8(changelogBody.content), latestVersion);
+      }
+    } catch {
+      // best-effort — the version number alone is still worth showing without changelog text
+    }
+    return { version: latestVersion, changelogEntry };
+  } catch {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -873,12 +960,55 @@ function renderLog() {
   if (pre) pre.textContent = state.log.join('\n');
 }
 
+// Shown above whichever tab is active — a plugin update isn't specific to
+// any one tab. Returns null (renders nothing) once there's no newer version,
+// or once the user has already dismissed this exact version — dismissing
+// only suppresses THIS version's banner, a later release shows its own.
+function renderUpdateBanner(): HTMLElement | null {
+  const release = state.latestPluginRelease;
+  if (!release || release.version === state.dismissedUpdateVersion) return null;
+
+  const dismissBtn = el('button', { className: 'icon-btn', title: 'Dismiss until the next release' }, [icon('XCircle', undefined, 13)]);
+  dismissBtn.onclick = () => {
+    state.dismissedUpdateVersion = release.version;
+    postToPlugin({ type: 'save-dismissed-update-version', version: release.version });
+    render();
+  };
+
+  const headline = el('div', { className: 'update-banner-headline' }, [
+    el('span', {}, [`Design Sync v${release.version} is available `]),
+    el('span', { className: 'hint' }, [`(you're on v${__APP_VERSION__})`]),
+    dismissBtn,
+  ]);
+
+  const content: (Node | string)[] = [headline];
+
+  if (release.changelogEntry) {
+    const details = persistentDetails(`update-${release.version}`, false, 'setup-guide nested', ["What's new"]);
+    details.appendChild(el('pre', {}, [release.changelogEntry]));
+    content.push(details);
+  }
+
+  // Honest about the actual constraint (README §4 / every other "can't
+  // automate this" moment in this app): there is no one-click update in
+  // this distribution mode, only a pointer to what to do manually.
+  content.push(
+    el('p', { className: 'hint' }, [
+      'This plugin has no auto-update — pull the latest code, rebuild, then fully close and relaunch the plugin (not just this panel) to pick it up.',
+    ]),
+  );
+
+  return statusBanner('info', content);
+}
+
 function render() {
   document.querySelectorAll<HTMLButtonElement>('.tab-btn').forEach((btn) => {
     btn.classList.toggle('active', btn.dataset.tab === state.activeTab);
   });
   const root = panel();
   root.innerHTML = '';
+  const updateBanner = renderUpdateBanner();
+  if (updateBanner) root.appendChild(updateBanner);
   if (state.activeTab === 'connect') root.appendChild(renderConnectTab());
   if (state.activeTab === 'tokens') root.appendChild(renderTokensTab());
   if (state.activeTab === 'sync') root.appendChild(renderSyncTab());

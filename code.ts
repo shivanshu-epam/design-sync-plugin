@@ -36,6 +36,7 @@ type EffectShadow = DropShadowEffect | InnerShadowEffect;
 
 const SETTINGS_KEY = 'design-sync:github-settings';
 const HISTORY_KEY = 'design-sync:sync-history';
+const DISMISSED_UPDATE_VERSION_KEY = 'design-sync:dismissed-update-version';
 const CUSTOM_TOKENS_KEY = 'design-sync:custom-tokens'; // holds { dimension, string, boolean }
 const PLUGIN_DATA_NAMESPACE = 'designsync';
 
@@ -605,9 +606,17 @@ async function loadHistory(): Promise<SyncHistoryEntry[]> {
   return (await figma.clientStorage.getAsync(HISTORY_KEY)) ?? [];
 }
 
+async function loadDismissedUpdateVersion(): Promise<string | null> {
+  return (await figma.clientStorage.getAsync(DISMISSED_UPDATE_VERSION_KEY)) ?? null;
+}
+
 async function init() {
-  const [settings, history] = await Promise.all([loadSettings(), loadHistory()]);
-  figma.ui.postMessage({ type: 'init', settings, history });
+  const [settings, history, dismissedUpdateVersion] = await Promise.all([
+    loadSettings(),
+    loadHistory(),
+    loadDismissedUpdateVersion(),
+  ]);
+  figma.ui.postMessage({ type: 'init', settings, history, dismissedUpdateVersion });
 }
 
 figma.ui.onmessage = async (msg: UIToPluginMessage) => {
@@ -618,6 +627,10 @@ figma.ui.onmessage = async (msg: UIToPluginMessage) => {
 
     case 'save-settings':
       await figma.clientStorage.setAsync(SETTINGS_KEY, msg.settings);
+      break;
+
+    case 'save-dismissed-update-version':
+      await figma.clientStorage.setAsync(DISMISSED_UPDATE_VERSION_KEY, msg.version);
       break;
 
     case 'request-figma-tokens': {

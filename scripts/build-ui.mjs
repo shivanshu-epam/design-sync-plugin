@@ -30,6 +30,11 @@ const options = {
   format: 'iife',
   target: 'es2020',
   logLevel: 'info',
+  // Same package.json version already injected into the footer's static
+  // HTML text, also exposed as a compile-time constant so ui.ts's own code
+  // (the update-check banner) can compare "what am I running" against
+  // "what does GitHub say is latest" — not read from the DOM at runtime.
+  define: { __APP_VERSION__: JSON.stringify(version) },
 };
 
 if (watch) {

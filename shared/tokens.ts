@@ -55,10 +55,19 @@ export type UIToPluginMessage =
   | { type: 'save-custom-tokens'; dimension: Record<string, DimensionToken>; string: Record<string, StringToken>; boolean: Record<string, BooleanToken> }
   | { type: 'apply-tokens'; tokens: TokenSet }
   | { type: 'save-history'; entry: SyncHistoryEntry }
-  | { type: 'open-external'; url: string };
+  | { type: 'open-external'; url: string }
+  | { type: 'save-dismissed-update-version'; version: string };
 
 export type PluginToUIMessage =
-  | { type: 'init'; settings: GithubSettings | null; history: SyncHistoryEntry[] }
+  | {
+      type: 'init';
+      settings: GithubSettings | null;
+      history: SyncHistoryEntry[];
+      // The plugin-update version the user last dismissed the "what's new"
+      // banner for (Phase 22) — null if never dismissed anything. Persisted
+      // in clientStorage, not plugin-local state, so it survives a relaunch.
+      dismissedUpdateVersion: string | null;
+    }
   | { type: 'figma-tokens'; tokens: TokenSet }
   | { type: 'figma-tokens-error'; error: string }
   // diagnostics: one line per color/dimension/string/boolean token processed,

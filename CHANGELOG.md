@@ -9,6 +9,39 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.19.0] - 2026-08-06
+
+### Added
+- **In-plugin release notifications (Phase 22).** On launch, the plugin
+  checks `design-sync-plugin`'s own `package.json` on GitHub (an
+  unauthenticated request — never depends on a connected repo or the
+  user's tokens-repo PAT, since this checks a different repo entirely)
+  and shows a dismissible banner above whichever tab is active if a
+  newer version exists, with an expandable "What's new" pulling the
+  matching `CHANGELOG.md` section. Dismissing is per-version (persisted
+  via a new `save-dismissed-update-version` message/clientStorage key) —
+  a later release shows its own banner even after an earlier one was
+  dismissed. Honest about the actual constraint every "can't automate
+  this" moment in this app already respects: there is no auto-update in
+  this distribution mode, the banner says exactly that and points at the
+  manual pull-rebuild-relaunch steps instead of implying one click.
+- `__APP_VERSION__`, a new build-time constant (via esbuild's `define` in
+  `build-ui.mjs`) exposing `package.json`'s version to `ui.ts`'s own code,
+  not just the footer's static HTML text — needed so the update check has
+  something real to compare against.
+
+### Deviation from the roadmap spec
+Phase 22's original spec (`design-sync-roadmap-phases-1-11.md`) proposed
+checking `GET /repos/.../releases/latest` (GitHub Releases). This project
+has never published a GitHub Release — switched to reading `package.json`
+directly via the Contents API instead, matching how every other version
+check in this app already works, with no new process required (no need to
+start tagging releases just for this).
+
+**Requires `design-sync-plugin` to be a public repo** — confirmed public
+as of this release. If it's ever made private again, the check fails
+silently (no banner shows, nothing else breaks) rather than erroring.
+
 ## [1.18.0] - 2026-08-05
 
 ### Added
