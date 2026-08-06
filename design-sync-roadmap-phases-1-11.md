@@ -103,7 +103,7 @@ Legend:
 | 3 | PR-based governed sync | ✅ Shipped | — (done) |
 | 4 | CI/CD automation | ✅ Shipped | — (done) |
 | 5 | Versioned audit trail and rollback | ✅ Shipped | — (done) |
-| 6 | Multi-brand / multi-file orchestration | ❌ Not started | **Lowest — no current use case** |
+| 6 | Multi-brand / multi-file orchestration | ❌ Not started | **Lowest — no current use case** (see §7's new-evidence note — a consultancy/agency buyer profile makes this look more load-bearing; priority not yet revisited) |
 | 7 | Semantic diff and AI-assisted conflict resolution | ❌ Not started | **Medium — not now** |
 | 8 | Cross-platform distribution (Style Dictionary) | ❌ Not started | **Lowest — no current use case** |
 | 9 | Notifications and live collaboration | 🟡 Partial — notifications shipped (v1.8.0); the static status page shipped (v1.11.0) then was explicitly reverted (v1.11.1, "not wanted") | Notifications: done. Status page: rejected, not planned. |
@@ -120,6 +120,38 @@ Separately: the plugin's v1.12.0–v1.16.2 release series (icons, progressive di
 the full tab-by-tab UI redesign) is **not** one of these phases — it's an orthogonal
 UX-polish track layered on top of whatever capability already exists, not new capability
 itself. See `CHANGELOG.md` for that work.
+
+---
+
+## 1b. Known implementation gaps (not yet phases)
+
+Surfaced from a pros/cons review of the current build (2026-08-05). These are honest
+weaknesses in what's already shipped, not new capability requests — listed here so
+they're tracked rather than lost, not because each one needs its own phase.
+
+- **No automated test coverage on the plugin's own UI/interaction logic.** Only
+  `design-sync-schema` (pure token-model functions) has unit tests today —
+  `ui.ts`/`code.ts` (rendering, state, the actual redesigned tabs) have none. A
+  regression in interaction logic is caught by manual QA only, not CI. Worth a
+  lightweight pass (e.g. testing the pure state-transition functions the way
+  `sync-logic.ts` already is) before this grows much further, rather than a full phase.
+- **PAT scope keeps growing with no central management.** Four scopes now (Contents,
+  Pull requests, Actions, Pages), each per-user, per-machine, with no rotation or
+  revocation story. This is exactly what Phase 10's scoped API tokens would replace —
+  see that phase's updated Problem section below.
+- **Conservative Variable write-back** (Phase 2, already shipped): a GitHub-side
+  resolution only re-links a token to a Figma Variable it already has history with — a
+  brand-new token from GitHub still becomes a Style, never a newly-created Variable.
+  Documented in README's Known Limitations; not re-scoped here since fixing it doesn't
+  change user-facing capability, just write fidelity.
+- **Storybook bundles the full token JSON directly** (currently ~5MB), producing a
+  build-time chunk-size warning. Fine at today's scale; would need addressing (most
+  likely fetching at runtime instead of bundling) if the token set grows substantially
+  further. Not urgent enough to scope as its own phase yet.
+- **Figma-only.** Every phase above is built against Figma's plugin API and Variables
+  model specifically. Supporting another design tool (Sketch, Adobe XD, Penpot) would be
+  a substantial rebuild, not an extension — noted for awareness, explicitly out of scope
+  for this roadmap.
 
 ---
 
@@ -695,7 +727,15 @@ interface AuditEntry {
 
 **Status**: ❌ Not started. **Priority**: **Lowest — no current use case.** Explicit
 product decision (2026-08-05): not needed right now. Revisit if a genuine multi-brand /
-multi-repo requirement shows up.
+multi-repo requirement shows up. **New evidence, priority unchanged** (2026-08-05,
+market-fit discussion): the strongest realistic buyer for this whole project is a
+digital consultancy/agency maintaining design systems for multiple *client*
+engagements at once (a team like EPAM, whose own UUI system is this project's real test
+data) — each client too small individually to justify a Google/Microsoft-style
+in-house platform team, but collectively hitting this exact drift problem constantly.
+That buyer profile makes multi-brand/multi-repo routing look more load-bearing than
+"nice to have," not less — flagged here for whoever revisits prioritization, not acted
+on unilaterally.
 
 ### Goal
 Support N Figma files syncing into M token destinations (e.g. multiple brands, each
@@ -707,7 +747,11 @@ Original README §11: "Multi-file / multi-brand support... all part of the origi
 'Design Sync' platform vision, none of it built here." Today's Connect tab holds exactly
 one owner/repo/branch/path configuration. Enterprise design systems commonly run
 multiple brand themes (the EPAM UUI test case's own `Loveship`/`Promo`/`Electric` modes
-hint at this need already, even within one file) across genuinely separate Figma files.
+hint at this need already, even within one file) across genuinely separate Figma files —
+and a consultancy managing several *separate client repos* hits the same gap from the
+other direction: one Connect-tab configuration per plugin instance means switching
+clients today means manually reconfiguring the connection each time, with no way to
+keep several live at once.
 
 ### Dependencies
 None technically required, but much more valuable after Phase 5 (multi-brand audit
@@ -1145,6 +1189,13 @@ delivered most of these as file-based, CI-driven, or plugin-local implementation
 phase is about *consolidating* them behind a real service once the org has outgrown
 what git commits and GitHub Actions can reasonably carry — many small teams may never
 need this phase at all, which is fine; it's an optional capstone, not a requirement.
+
+**Concrete pain this would also fix, beyond the original brief** (§1b): the PAT
+permission model has grown to four scopes per user with no central rotation or
+revocation — every new feature this project ships adds another scope users must
+individually manage. Phase 10's own API surface already calls for "scoped API tokens
+(separate from the user's own GitHub PAT)" — that's the direct fix for this, not a new
+requirement.
 
 ### Dependencies
 Requires Phases 5 (audit log — becomes a migration source), 6 (multi-connection
