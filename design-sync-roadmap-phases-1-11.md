@@ -120,7 +120,7 @@ Legend:
 | 19 | PR governance agent (policy-based auto-merge) | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
 | 20 | Notification routing — groups + urgency-based mentions | ❌ Not started | Unprioritized (new, proposed 2026-08-05) — extends Phase 9 |
 | 21 | SDLC / issue-tracker integration (JIRA, Planner) | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
-| 22 | In-plugin release notifications | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
+| 22 | In-plugin release notifications | ✅ Shipped (v1.19.0) | — (done) |
 | 23 | Visual design language revamp (v2) | ❌ Not started, **unscoped** | Unprioritized — needs a direction decision before it can be scoped at all |
 
 Separately: the plugin's v1.12.0–v1.16.2 release series (icons, progressive disclosure,
@@ -2271,7 +2271,12 @@ shows a small ticket-ID chip + link next to the existing PR link.
 
 ## 23. Phase 22 — In-plugin release notifications
 
-**Status**: ❌ Not started (new, proposed 2026-08-05). **Priority**: Unprioritized.
+**Status**: ✅ Shipped (v1.19.0, 2026-08-06). **Priority**: — (done). Deviated from
+this section's original GitHub-Releases-based spec — see `CHANGELOG.md`'s 1.19.0 entry:
+reads `package.json` directly via the Contents API instead, since this project has
+never published a GitHub Release. Requires `design-sync-plugin` to be a public repo
+(confirmed public as of this release) — degrades silently (no banner, nothing else
+breaks) if that ever changes.
 
 ### Goal
 When a new plugin version ships, users see a clear in-app notice — what changed, and a
@@ -2414,7 +2419,7 @@ Reflects the 2026-08-05 priority decisions above — phases marked Lowest/Medium
 are listed for completeness, not as a recommendation to pick them up now.
 
 **Shipped** (for reference, not re-sequencing): Phase 1 → Phase 4 → Phase 3 → Phase 5 →
-Phase 2 → Phase 9 (notifications half only).
+Phase 2 → Phase 9 (notifications half only) → Phase 22 (v1.19.0).
 
 **Do first, ahead of any new phase** — this is a defect on already-shipped work, not
 new capability, and it's small:
@@ -2429,42 +2434,39 @@ new capability, and it's small:
 1. **Phase 16 (concurrent-sync advisory lock)** — needs only Phase 3 (shipped), cheapest
    remaining phase relative to payoff: closes a real, documented known-limitation with
    one read-only API call and one banner, no new infrastructure.
-2. **Phase 22 (in-plugin release notifications)** — no dependencies at all, independent
-   of every other phase, purely additive. A good second pick for the same reason as #1:
-   cheap, self-contained, immediately useful regardless of what else is being built.
-3. **Phase 12 (PR preview builds)** — needs Phase 3 + 4 (both shipped), pure CI addition,
+2. **Phase 12 (PR preview builds)** — needs Phase 3 + 4 (both shipped), pure CI addition,
    no plugin code changes required for a v1 (the PR comment alone suffices).
-4. **Phase 13 (contrast/accessibility linting)** — needs Phase 1 (shipped), pairs
+3. **Phase 13 (contrast/accessibility linting)** — needs Phase 1 (shipped), pairs
    directly with the existing `validate-tokens.mjs` CI step.
-5. **Phase 14 (token deprecation lifecycle)** — needs Phase 1 (shipped), stands alone
+4. **Phase 14 (token deprecation lifecycle)** — needs Phase 1 (shipped), stands alone
    without Phase 11 but is most valuable once Phase 11 exists.
-6. **Phase 17 (Figma deep-linking)** — needs Phase 1 + 4 (both shipped), Storybook-only
+5. **Phase 17 (Figma deep-linking)** — needs Phase 1 + 4 (both shipped), Storybook-only
    change, zero plugin-side risk.
-7. **Phase 18 (dedicated Storybook repo)** — needs Phase 4 (shipped). Worth doing before
+6. **Phase 18 (dedicated Storybook repo)** — needs Phase 4 (shipped). Worth doing before
    Phase 21, since Phase 21's screenshot step is cleaner once Storybook already lives in
    its own build context — but not a hard blocker either way.
-8. **Phase 20 (notification routing)** — needs Phase 9's notifications half (shipped).
+7. **Phase 20 (notification routing)** — needs Phase 9's notifications half (shipped).
    Self-contained extension; doesn't require Phase 19 despite sharing its policy-file
    *pattern*.
-9. **Phase 19 (governance agent)** — needs Phase 3 + 5 (both shipped). Bigger than #1–8
+8. **Phase 19 (governance agent)** — needs Phase 3 + 5 (both shipped). Bigger than #1–7
    above — new auth surface (a GitHub App, not a PAT) — sequence after the smaller wins
    so the team has full context on the repo before adding a new credential type.
-10. **Phase 21 (SDLC/issue-tracker integration)** — needs Phase 5 (shipped), pairs
+9. **Phase 21 (SDLC/issue-tracker integration)** — needs Phase 5 (shipped), pairs
     naturally with Phase 19's agent identity once that exists.
-11. **Phase 6 (multi-brand)** — **lowest priority, but re-flagged** (§7's new-evidence
+10. **Phase 6 (multi-brand)** — **lowest priority, but re-flagged** (§7's new-evidence
     note): revisit if a consultancy/agency-style multi-client need shows up, which this
     project's own test data suggests isn't hypothetical.
-12. **Phase 8 (cross-platform/Style Dictionary)** — currently **lowest priority, no known
+11. **Phase 8 (cross-platform/Style Dictionary)** — currently **lowest priority, no known
     use case**. Only pick this up if native-platform (iOS/Android) demand shows up.
-13. **Phase 7 (AI-assisted diff)** — currently **medium, not now**. Highest payoff once
+12. **Phase 7 (AI-assisted diff)** — currently **medium, not now**. Highest payoff once
     token sets are large (post multi-brand) — revisit once Phase 6 is either done or
     confirmed permanently out of scope.
-14. **Phase 10 (backend/platform layer)** — currently **medium, not now**. The capstone;
+13. **Phase 10 (backend/platform layer)** — currently **medium, not now**. The capstone;
     revisit once file/CI-based state genuinely stops scaling, or once Phase 19's PAT-scope
     growth pain (§1b) makes scoped API tokens worth building sooner.
-15. **Phase 11 (drift detection)** — blocked on Phase 10. Not actionable until Phase 10
+14. **Phase 11 (drift detection)** — blocked on Phase 10. Not actionable until Phase 10
     is picked back up.
-16. **Phase 15 (blast-radius preview)** — blocked on Phase 11 (and therefore transitively
+15. **Phase 15 (blast-radius preview)** — blocked on Phase 11 (and therefore transitively
     on Phase 10). Last in the chain by construction.
 
 **Phase 23 (visual design v2)** is intentionally absent from this ordered list — it
