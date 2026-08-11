@@ -1056,6 +1056,10 @@ function renderConnectHeader(kind: 'setup' | 'editing' | 'connected', settings: 
     return el('div', { className: 'connect-header' }, [
       icon('CheckCircle', 'connect-header-icon connected', 20),
       el('div', { className: 'connect-header-text' }, [
+        // A labeled heading, same convention as the Notifications/Recent
+        // activity accordions right below — the checkmark + repo name alone
+        // read as "just data" with nothing saying what it is.
+        el('div', { className: 'connect-header-label' }, ['Connected repository']),
         el('span', { className: 'connect-header-repo' }, [
           `${settings.owner}/${settings.repo}`,
           el('span', { className: 'branch' }, [`· ${settings.branch}`]),
@@ -1067,7 +1071,9 @@ function renderConnectHeader(kind: 'setup' | 'editing' | 'connected', settings: 
   return el('div', { className: 'connect-header' }, [
     icon('GithubLogo', 'connect-header-icon', 20),
     el('div', { className: 'connect-header-text' }, [
-      kind === 'editing' ? 'Update your GitHub connection' : 'Link a GitHub repo to keep tokens in sync',
+      el('div', { className: 'connect-header-label' }, [
+        kind === 'editing' ? 'Update your GitHub connection' : 'Link a GitHub repo to keep tokens in sync',
+      ]),
     ]),
   ]);
 }

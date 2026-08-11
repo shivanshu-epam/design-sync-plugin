@@ -520,37 +520,46 @@
   }
   /* The header row itself is one shared code path (renderConnectHeader in
      ui.ts) across all three states — its position and shape never move,
-     only its icon/text/actions do. */
-  /* This row IS the panel's heading in the setup/editing states — bold,
-     same language as h2, the only bold text in the panel. In the connected
-     state there's no headline text here at all (see .connect-header-repo
-     below), so the bold weight simply has nothing to apply to. */
+     only its icon/text/actions do. flex-wrap + align-items:flex-start
+     (rather than center) because the connected state stacks a label above
+     a value inside .connect-header-text, and actions need room to drop to
+     their own line on a narrow panel instead of squeezing the repo name. */
   .connect-header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
+    flex-wrap: wrap;
     gap: 10px;
     margin-bottom: 14px;
-    font-size: var(--fs-lg);
-    font-weight: var(--fw-bold);
     color: var(--text);
   }
   /* Nothing below the header (the connected state with no status banner) —
      the panel's own bottom padding is enough, this margin would just add
      dead space under a header with no body. */
   .connect-header:last-child { margin-bottom: 0; }
-  .connect-header-icon { flex-shrink: 0; color: var(--text); }
+  .connect-header-icon { flex-shrink: 0; color: var(--text); margin-top: 1px; }
   .connect-header-icon.connected { color: var(--cta); }
-  .connect-header-text { flex: 1 1 auto; min-width: 0; }
-  /* The connected repo identity — a value, not a headline, so it's
-     deliberately NOT bold (only the panel's own heading text is). One
-     consistent monospace treatment for both the repo name and the branch,
-     instead of mixing a bold sans name with a normal-weight mono branch.
-     --surface background keeps it visible against the panel's --bg-subtle
-     fill, same "child flips tone" pattern used elsewhere in this file. */
+  .connect-header-text { flex: 1 1 200px; min-width: 0; }
+  /* The one heading in the panel — same convention every setup-guide
+     accordion already uses (a labeled heading, not a bare value), and the
+     only bold text here regardless of which of the 3 states is showing. */
+  .connect-header-label {
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-bold);
+  }
+  /* The connected repo identity — a value below the heading, not the
+     heading itself, so it's deliberately NOT bold. One consistent
+     monospace treatment for both the repo name and the branch, instead of
+     mixing a bold sans name with a normal-weight mono branch. Wraps rather
+     than truncating — a long repo name should still be fully readable, not
+     cut off with no way to see the rest. --surface background keeps it
+     visible against the panel's --bg-subtle fill, same "child flips tone"
+     pattern used elsewhere in this file. */
   .connect-header-repo {
     display: inline-flex;
     align-items: baseline;
-    gap: 5px;
+    flex-wrap: wrap;
+    gap: 2px 5px;
+    margin-top: 6px;
     background: var(--surface);
     border-radius: var(--radius);
     padding: 3px 9px;
@@ -559,12 +568,10 @@
     font-size: var(--fs-base);
     color: var(--text);
     max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    overflow-wrap: break-word;
   }
   .connect-header-repo .branch { color: var(--text-muted); }
-  .connect-header-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .connect-header-actions { display: flex; gap: 6px; flex-shrink: 0; margin-top: 1px; }
 
   /* A quiet inline confirmation next to the token field's label, once a
      token has successfully listed repos — the "quiet checkmark" instead
