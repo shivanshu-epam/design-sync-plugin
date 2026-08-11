@@ -440,6 +440,10 @@
     padding: 9px 11px;
     background: var(--bg-subtle);
   }
+  /* .connect-panel is itself --bg-subtle — a same-toned accordion inside it
+     would disappear the way the "nested" variant used to. Same "child flips
+     tone" rule already applied to .trust-badge. */
+  .connect-panel details.setup-guide { background: var(--surface); }
   details.setup-guide summary {
     cursor: pointer;
     font-weight: var(--fw-medium);

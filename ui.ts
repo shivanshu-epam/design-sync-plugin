@@ -1131,7 +1131,13 @@ function renderConnectForm(container: HTMLElement): void {
   container.appendChild(
     el('p', { className: 'trust-badge' }, [icon('CheckCircle', undefined, 12), 'Stored locally, never uploaded except to api.github.com']),
   );
-  const permsDetails = persistentDetails('connect-permissions', false, 'setup-guide nested', ['What permissions does this need?']);
+  // Full setup-guide treatment (own background, padding, radius) — not the
+  // "nested" link-only variant, even though this sits inside .connect-panel.
+  // It needs to read as its own discrete, always-findable box in both
+  // collapsed and expanded states, same as Notifications/Recent activity
+  // below it — the "nested" variant (no background at all) made it
+  // disappear into the surrounding panel instead.
+  const permsDetails = persistentDetails('connect-permissions', false, 'setup-guide', ['What permissions does this need?']);
   permsDetails.appendChild(
     el('div', {}, [
       el('p', { className: 'hint' }, ['Fine-grained token, scoped to one repo.']),
