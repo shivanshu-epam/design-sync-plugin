@@ -5,90 +5,89 @@
 <title>Design Sync</title>
 <style>
   /*
-   * Developer-tool palette (slate + blue + green), chosen via the
-   * ui-ux-pro-max skill's own search tool against this project's actual
-   * shape: "Developer Tool / IDE" and "Minimalism & Swiss Style" were its
-   * closest product-type matches (the latter's own description: "Best for:
-   * ...dashboards, documentation sites, SaaS platforms, professional
-   * tools"), both flagged dual-mode (light + dark), which a Figma plugin
-   * needs since Figma itself runs in both.
+   * "Ledger" palette (v2, replaces the v1 slate+blue+green developer-tool
+   * palette) — near-black ink on warm paper, one confident indigo accent,
+   * semantic colors present but deliberately quieter than the accent so
+   * they read as state, not brand. Chosen after an explicit audit (see
+   * PROJECT.md/CHANGELOG) categorized the old palette as functionally
+   * sound (icon+color pairing, never color-alone) but visually generic —
+   * this keeps that behavior, changes only the values.
    *
-   * --accent and --cta are each used in two different roles that pull in
-   * opposite directions for contrast: white text ON TOP of a solid button
-   * (needs a darker shade), and the same color used AS text/links against
-   * the page background (needs a lighter shade in dark mode, since the bg
-   * is near-black). No single hue satisfies both at a full 4.5:1 in dark
-   * mode — verified with an actual WCAG relative-luminance calculation,
-   * not eyeballed — so --accent (#3678E2) is deliberately tuned to the
-   * best achievable balance point for both roles (~4.2:1 each) rather than
-   * optimizing one role at the other's expense. --cta only ever backs
-   * white text (never used as inline link text), so it's picked purely for
-   * that: 5.02:1 in both modes.
+   * Every foreground/background pairing below is verified against an
+   * actual WCAG relative-luminance calculation, not eyeballed — same
+   * discipline the v1 palette's own comment established. All pairs clear
+   * 4.5:1 (several clear 6–19:1); see the CHANGELOG entry for this
+   * revamp for the exact computed ratios.
    */
   :root {
     color-scheme: light dark;
-    --chrome-bg: #0f172a;       /* slate-900 — nav chrome stays dark in both modes */
-    --chrome-text: #94a3b8;     /* slate-400 */
-    --chrome-text-active: #f8fafc;
+    --chrome-bg: #0a0a0a;       /* near-black — nav chrome stays dark in both modes */
+    --chrome-text: #9c9b96;
+    --chrome-text-active: #f5f5f4;
 
-    --bg: #f8fafc;              /* slate-50 — page background */
-    --surface: #ffffff;         /* panels, inputs */
-    --bg-subtle: #f1f5f9;       /* slate-100 — code/log blocks */
-    --border: #e2e8f0;          /* slate-200 */
-    --text: #0f172a;            /* slate-900 — 17.1:1 on --bg */
-    --text-muted: #64748b;      /* slate-500 — 4.6:1 on --bg */
-    --text-placeholder: #94a3b8; /* slate-400 */
+    --bg: #fafaf9;              /* warm paper, not blue-tinted white */
+    --surface: #fafaf9;         /* same as --bg — panels separate by --bg-subtle, not a white-on-grey box */
+    --bg-subtle: #f0efec;       /* recessed panel tone — accordions, code/log blocks */
+    --border: #e2e0db;          /* hairline only — this palette leans on space/surface over borders */
+    --text: #0a0a0a;            /* 18.96:1 on --bg */
+    --text-muted: #6b6b68;      /* 5.12:1 on --bg */
+    --text-placeholder: #a4a29c;
 
-    --accent: #3678e2;          /* primary actions, links — see note above */
-    --accent-hover: #2a5ec4;
+    --accent: #3f4dff;          /* Ledger's signature indigo — 5.41:1 as text, 5.65:1 backing white */
+    --accent-hover: #2f3ce0;
     --accent-text: #ffffff;
 
-    --cta: #15803d;             /* sync/commit action, Figma-source chip — 5.0:1 w/ white text */
-    --cta-hover: #11642f;
+    --cta: #1a7f4e;             /* sync/commit action — 4.80:1 on --bg, 5.01:1 backing white */
+    --cta-hover: #146540;
 
-    --danger: #dc2626;          /* red-600 — 4.8:1 on --bg */
-    --danger-hover: #b91c1c;
-    --danger-bg: #fee2e2;
+    --danger: #c4361f;          /* desaturated relative to v1's red-600, sits quietly under --accent */
+    --danger-hover: #a12c19;
 
-    --success-bg: #dcfce7;
-    --success-text: #14532d;    /* 8.3:1 on --success-bg */
+    --warn: #a8590a;
+    --warn-bg: #fbeed9;
 
-    --warn: #b45309;            /* amber-700, not the more common 600 — 600 is only 3.2:1 on white, fails as icon/text color */
-    --warn-bg: #fef3c7;
+    --radius: 2px;               /* was 5px — Ledger reads as cut, not rounded; 0 tested too harsh in review */
+    --overlay-shadow: 0 4px 14px rgba(10, 10, 10, 0.1); /* the one floating element (repo search menu) — everything else signals elevation with surface color, not a shadow */
 
-    --radius: 5px;
-    --overlay-shadow: 0 4px 14px rgba(15, 23, 42, 0.12); /* the one floating element (repo search menu) — everything else in this app signals elevation with a border alone */
+    /* Type scale — real jumps (was a flat 11–13px range with almost no
+       weight contrast, which is why hierarchy read as weak despite a
+       reasonable IA underneath it). */
+    --fs-2xl: 22px;   /* section headers — was 12px uppercase small-caps */
+    --fs-lg: 15px;    /* field labels, card titles */
+    --fs-base: 13px;  /* body — unchanged, already reasonable at this panel width */
+    --fs-sm: 12px;    /* secondary/meta text */
+    --fs-xs: 10.5px;  /* eyebrows, tag text */
+    --fw-bold: 800;
+    --fw-medium: 600;
+    --fw-normal: 400;
   }
   @media (prefers-color-scheme: dark) {
     :root {
-      --chrome-bg: #020617;     /* slate-950 */
-      --chrome-text: #94a3b8;
+      --chrome-bg: #050505;
+      --chrome-text: #9c9b96;
 
-      --bg: #0f172a;            /* slate-900 */
-      --surface: #1b2336;       /* elevated above --bg */
-      --bg-subtle: #171f30;
-      --border: #334155;        /* slate-700 */
-      --text: #f8fafc;          /* slate-50 — 17.1:1 on --bg */
-      --text-muted: #94a3b8;    /* slate-400 — 7.0:1 on --bg */
-      --text-placeholder: #64748b;
+      --bg: #0a0a0a;             /* true near-black, not slate-900's blue tint */
+      --surface: #0a0a0a;
+      --bg-subtle: #171716;
+      --border: #2a2a28;
+      --text: #f5f5f4;           /* 18.15:1 on --bg */
+      --text-muted: #9c9b96;     /* 7.11:1 on --bg */
+      --text-placeholder: #5c5b57;
 
-      --accent: #3678e2;        /* same hex as light — see note above */
-      --accent-hover: #5a93ea;  /* hover brightens in dark mode, not darkens */
+      --accent: #7b84ff;         /* lighter than light-mode's accent — needed for contrast on near-black; 6.21:1 as text */
+      --accent-hover: #9aa1ff;   /* hover brightens in dark mode, not darkens */
+      --accent-text: #08081f;    /* dark ink on the light-in-dark-mode accent, not white — 6.19:1 */
 
-      --cta: #15803d;           /* same hex as light — only ever backs white text */
-      --cta-hover: #1d9a4b;
+      --cta: #3ecb84;            /* 9.50:1 on --bg */
+      --cta-hover: #63d69c;
 
-      --danger: #ef4444;        /* red-500 — 4.7:1 on dark --bg (red-600 would only be 3.7:1) */
-      --danger-hover: #f87171;
-      --danger-bg: #450a0a;
+      --danger: #ff6b52;         /* light enough to clear 4.5:1 on near-black, still reads as the same hue as light mode's --danger */
+      --danger-hover: #ff8a75;
 
-      --success-bg: #052e16;
-      --success-text: #86efac;  /* 10.6:1 on --success-bg */
+      --warn: #e08a3c;
+      --warn-bg: #2b2007;
 
-      --warn: #f59e0b;          /* amber-500 — 8.3:1 on dark --bg */
-      --warn-bg: #451a03;
-
-      --overlay-shadow: 0 4px 14px rgba(0, 0, 0, 0.4); /* dark surfaces need a stronger, darker shadow to read as elevated at all */
+      --overlay-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
     }
   }
   * { box-sizing: border-box; }
@@ -156,7 +155,10 @@
     font-size: 9.5px;
     text-align: right;
   }
-  h2 { font-size: 12px; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); font-weight: 700; }
+  /* Was 12px uppercase small-caps, doing hierarchy's job with letter-spacing
+     instead of size — the single highest-impact change in this pass. Loud
+     size + weight now carries what uppercase used to stand in for. */
+  h2 { font-size: var(--fs-2xl); margin: 0 0 10px; color: var(--text); font-weight: var(--fw-bold); letter-spacing: -0.01em; }
   .section-divider { border: none; border-top: 1px solid var(--border); margin: 18px 0 14px; }
   .required-mark { color: var(--danger); margin-left: 3px; }
   .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
@@ -178,28 +180,32 @@
   }
   .row { display: flex; gap: 8px; }
   .row > * { flex: 1; }
+  /* Exactly one .primary/.cta per view stays a solid, loud fill — every
+     other button (Cancel, Test, icon-btns) is deliberately quiet: a
+     hairline border, transparent fill, muted text. Weight now comes from
+     WHICH button is solid, not from every button looking the same. */
   button {
     display: inline-flex;
     align-items: center;
     gap: 6px;
     font-family: inherit;
-    font-size: 12.5px;
-    font-weight: 600;
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-medium);
     padding: 7px 13px;
     border-radius: var(--radius);
     border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--text);
+    background: transparent;
+    color: var(--text-muted);
     cursor: pointer;
   }
-  button:hover:not(:disabled) { border-color: var(--text-muted); }
-  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
-  button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
-  /* The actual commit/push action gets UUI's "Call to action" green — its
-     own distinct semantic from the blue "Primary Action" buttons (Save,
-     Test connection, Fetch & compare). */
-  button.cta { background: var(--cta); color: #ffffff; border-color: var(--cta); }
-  button.cta:hover:not(:disabled) { background: var(--cta-hover); border-color: var(--cta-hover); }
+  button:hover:not(:disabled) { border-color: var(--text-muted); color: var(--text); }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: var(--fw-bold); }
+  button.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-text); }
+  /* The actual commit/push action gets its own distinct semantic from the
+     accent-colored "Primary Action" buttons (Save, Test connection, Fetch
+     & compare). */
+  button.cta { background: var(--cta); color: #ffffff; border-color: var(--cta); font-weight: var(--fw-bold); }
+  button.cta:hover:not(:disabled) { background: var(--cta-hover); border-color: var(--cta-hover); color: #ffffff; }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   button + button { margin-left: 6px; }
   /* gap handles spacing (buttons, and now also tags/icons mixed in) —
@@ -259,23 +265,29 @@
   .repo-search-option + .repo-search-option { border-top: 1px solid var(--border); }
   .repo-search-empty { padding: 6px 9px; font-size: 11.5px; color: var(--text-muted); }
   .hint { color: var(--text-muted); font-size: 11.5px; margin-top: 4px; }
+  /* Was a full color-tinted fill + full-ring border per kind — replaced
+     with one quiet neutral fill (--bg-subtle) and a colored LEFT EDGE
+     only. The icon still carries the semantic color (never color-alone),
+     but the banner itself separates from the page by surface tone, not by
+     boxing itself in a loud, differently-tinted ring every time. */
   .status-banner {
     display: flex;
     align-items: flex-start;
     gap: 8px;
-    padding: 9px 11px;
+    padding: 10px 12px;
     border-radius: var(--radius);
     /* Was margin-bottom only — a banner directly after a .btn-row (e.g.
        Connect/Test/Cancel's result) sat flush against the buttons with
        0px gap above it. */
     margin: 10px 0;
-    font-size: 12px;
+    font-size: var(--fs-sm);
     line-height: 1.5;
-    border: 1px solid transparent;
+    background: var(--bg-subtle);
+    border-left: 2px solid transparent;
   }
-  .status-banner.success { background: var(--success-bg); color: var(--success-text); border-color: var(--cta); }
-  .status-banner.error { background: var(--danger-bg); color: var(--text); border-color: var(--danger); }
-  .status-banner.info { background: var(--bg-subtle); color: var(--text); border-color: var(--accent); }
+  .status-banner.success { border-left-color: var(--cta); color: var(--text); }
+  .status-banner.error { border-left-color: var(--danger); color: var(--text); }
+  .status-banner.info { border-left-color: var(--accent); color: var(--text); }
   .status-banner-icon { margin-top: 2px; }
   .status-banner.success .status-banner-icon { color: var(--cta); }
   .status-banner.error .status-banner-icon { color: var(--danger); }
@@ -415,17 +427,20 @@
   .history-item { font-size: 12px; padding: 6px 0; border-bottom: 1px solid var(--border); }
   .pr-link { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); text-decoration: none; }
   .pr-link:hover { text-decoration: underline; }
+  /* Was a bordered card (border + --surface fill, which is identical to
+     --bg now anyway) — replaced with a recessed --bg-subtle panel and no
+     border, consistent with separating content by surface tone instead of
+     boxing every container in a ring. */
   details.setup-guide {
-    border: 1px solid var(--border);
     border-radius: var(--radius);
     margin-top: 10px;
-    padding: 8px 10px;
-    background: var(--surface);
+    padding: 9px 11px;
+    background: var(--bg-subtle);
   }
   details.setup-guide summary {
     cursor: pointer;
-    font-weight: 600;
-    font-size: 11px;
+    font-weight: var(--fw-medium);
+    font-size: var(--fs-sm);
     display: flex;
     align-items: center;
     gap: 5px;
@@ -439,8 +454,11 @@
   details.setup-guide summary::-webkit-details-marker { display: none; }
   details.setup-guide summary .caret { color: var(--text-muted); }
   details.setup-guide > div { margin-top: 8px; }
+  /* Parent is now the recessed tone (--bg-subtle) — code blocks inside use
+     --surface (the "paper" tone) instead, so they still read as a distinct
+     block rather than disappearing into an identical background. */
   details.setup-guide pre {
-    background: var(--bg-subtle);
+    background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     padding: 8px;
@@ -449,7 +467,7 @@
     white-space: pre;
   }
   details.setup-guide code {
-    background: var(--bg-subtle);
+    background: var(--surface);
     border-radius: 2px;
     padding: 1px 4px;
     font-size: 10px;
@@ -487,18 +505,20 @@
   .connect-security-line { display: flex; align-items: center; gap: 5px; }
   .connect-security-line .icon { color: var(--cta); }
 
-  /* Small pill for a compact fact (a filename, a requirement) — replaces
+  /* Small label for a compact fact (a filename, a requirement) — replaces
      a "Requires <code>X</code> and <code>Y</code>..." sentence with
-     something scannable at a glance instead of read word by word. */
-  .tag-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+     something scannable at a glance instead of read word by word. Was a
+     999px pill — the most rounded shape possible, directly at odds with
+     Ledger's sharp-cornered language — now a plain label, no border, set
+     apart by uppercase + letter-spacing instead of a pill outline. */
+  .tag-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
   .tag {
     font-family: ui-monospace, 'SF Mono', monospace;
-    font-size: 10px;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-medium);
+    letter-spacing: 0.02em;
     color: var(--text-muted);
-    background: var(--bg-subtle);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 2px 8px;
+    text-transform: uppercase;
   }
 </style>
 </head>
