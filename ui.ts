@@ -1032,36 +1032,42 @@ function render() {
 // the entire setup flow. Test/Edit are icon-only, so both need an explicit
 // aria-label (the accessibility rule this whole revamp leaned on: icon
 // buttons without a label are a High-severity anti-pattern).
-function renderConnectionCard(settings: GithubSettings): HTMLElement {
-  const card = el('div', { className: 'connect-card' });
-  const testBtn = el('button', { className: 'icon-btn tip-end' }, [icon('Pulse', undefined, 13)]);
-  testBtn.setAttribute('data-tip', 'Test this connection');
-  testBtn.setAttribute('aria-label', 'Test connection');
-  testBtn.onclick = async () => {
-    testBtn.replaceChildren(icon('CircleNotch', 'spin', 13));
-    testBtn.setAttribute('disabled', 'true');
-    state.connectStatus = await testConnection(settings);
-    render();
-  };
-  const editBtn = el('button', { className: 'icon-btn tip-end' }, [icon('PencilSimple', undefined, 13)]);
-  editBtn.setAttribute('data-tip', 'Edit connection settings');
-  editBtn.setAttribute('aria-label', 'Edit connection');
-  editBtn.onclick = () => {
-    state.connectEditing = true;
-    state.connectStatus = null;
-    render();
-  };
-  card.appendChild(
-    el('div', { className: 'connect-card-header' }, [
-      icon('CheckCircle', 'connect-card-icon', 16),
-      el('span', { className: 'connect-card-title' }, ['Connected']),
-      el('div', { className: 'connect-card-actions' }, [testBtn, editBtn]),
+// Single shared header for all three Connect-tab states — same code path,
+// not just similar CSS, so the row a user sees never actually changes shape
+// or position when the state underneath it does. Mirrors the principle
+// details.setup-guide already uses (fixed frame, swappable content), one
+// level up: the panel and this header never disappear, only what's inside
+// and below them does.
+function renderConnectHeader(kind: 'setup' | 'editing' | 'connected', settings: GithubSettings | null): HTMLElement {
+  if (kind === 'connected' && settings) {
+    const testBtn = el('button', {}, [icon('Pulse', undefined, 13), 'Test']);
+    testBtn.onclick = async () => {
+      testBtn.replaceChildren(icon('CircleNotch', 'spin', 13), 'Test');
+      testBtn.setAttribute('disabled', 'true');
+      state.connectStatus = await testConnection(settings);
+      render();
+    };
+    const editBtn = el('button', {}, [icon('PencilSimple', undefined, 13), 'Edit']);
+    editBtn.onclick = () => {
+      state.connectEditing = true;
+      state.connectStatus = null;
+      render();
+    };
+    return el('div', { className: 'connect-header' }, [
+      icon('CheckCircle', 'connect-header-icon connected', 20),
+      el('div', { className: 'connect-header-text' }, [
+        el('strong', {}, [`${settings.owner}/${settings.repo}`]),
+        el('span', { className: 'connect-header-detail' }, [`· ${settings.branch}`]),
+      ]),
+      el('div', { className: 'connect-header-actions' }, [testBtn, editBtn]),
+    ]);
+  }
+  return el('div', { className: 'connect-header' }, [
+    icon('GithubLogo', 'connect-header-icon', 20),
+    el('div', { className: 'connect-header-text' }, [
+      kind === 'editing' ? 'Update your GitHub connection' : 'Link a GitHub repo to keep tokens in sync',
     ]),
-  );
-  card.appendChild(
-    el('div', { className: 'connect-card-detail' }, [el('strong', {}, [`${settings.owner}/${settings.repo}`]), ` · ${settings.branch}`]),
-  );
-  return card;
+  ]);
 }
 
 // The setup/edit form — shown when not yet configured, or when Edit was
@@ -1102,13 +1108,6 @@ function renderConnectForm(container: HTMLElement): void {
     el('div', { className: 'field' }, [el('label', {}, [labelText]), input]);
   const requiredRow = (labelText: string, input: HTMLElement) =>
     el('div', { className: 'field' }, [requiredLabel(labelText), input]);
-
-  // --- Hero: only for the setup/edit flow — the compact connected card
-  // already carries its own visual weight once configured, a second big
-  // intro block here would just compete with it. ---
-  container.appendChild(
-    el('div', { className: 'connect-hero' }, [icon('GithubLogo', 'connect-hero-mark', 24), 'Link a GitHub repo to keep tokens in sync']),
-  );
 
   // --- Token ---
   const tokenLabelRow = requiredRow('Personal access token', tokenInput);
@@ -1337,14 +1336,21 @@ function renderConnectTab(): HTMLElement {
   const container = el('div');
   container.appendChild(el('h2', {}, ['Connect']));
 
-  if (isConfigured(state.settings) && !state.connectEditing) {
-    container.appendChild(renderConnectionCard(state.settings));
+  // One panel, one header, for every state — the header's own code path is
+  // identical whether setting up, editing, or already connected, so the
+  // frame around it never has to disappear and reappear as something else.
+  const connected = isConfigured(state.settings) && !state.connectEditing;
+  const kind: 'setup' | 'editing' | 'connected' = connected ? 'connected' : state.connectEditing ? 'editing' : 'setup';
+  const panel = el('div', { className: 'connect-panel' });
+  panel.appendChild(renderConnectHeader(kind, state.settings));
+  if (connected) {
     if (state.connectStatus) {
-      container.appendChild(statusBanner(state.connectStatus.ok ? 'success' : 'error', [state.connectStatus.message]));
+      panel.appendChild(statusBanner(state.connectStatus.ok ? 'success' : 'error', [state.connectStatus.message]));
     }
   } else {
-    renderConnectForm(container);
+    renderConnectForm(panel);
   }
+  container.appendChild(panel);
 
   const activity = renderRecentActivity();
   if (activity) container.appendChild(activity);
