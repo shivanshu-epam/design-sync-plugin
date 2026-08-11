@@ -534,6 +534,51 @@
     color: var(--text-muted);
     text-transform: uppercase;
   }
+
+  /* Styled tooltip, no JS — an app-consistent replacement for the browser's
+     native title="" (unstyled, slow to appear, invisible until hovered).
+     Trigger with a data-tip attribute on any element. Inverted color (text
+     on bg, not another surface tone) so it reads as a floating layer, not
+     another panel. .tip-end anchors right instead of centering, for
+     triggers that sit near the panel's edge (e.g. connect-card actions)
+     where a centered chip would clip off-screen. */
+  [data-tip] { position: relative; }
+  [data-tip]::after {
+    content: attr(data-tip);
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%) translateY(2px);
+    background: var(--text);
+    color: var(--bg);
+    font-family: inherit;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-medium);
+    letter-spacing: 0;
+    text-transform: none;
+    line-height: 1.4;
+    padding: 4px 7px;
+    border-radius: 2px;
+    width: max-content;
+    max-width: 200px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.1s ease, transform 0.1s ease;
+    z-index: 30;
+  }
+  [data-tip]:hover::after, [data-tip]:focus-visible::after {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+  [data-tip].tip-end::after { left: auto; right: 0; transform: translateY(2px); }
+  [data-tip].tip-end:hover::after, [data-tip].tip-end:focus-visible::after { transform: translateY(0); }
+  @media (prefers-reduced-motion: reduce) {
+    [data-tip]::after { transition: none; }
+  }
+  /* Inline marker for a data-tip stashed mid-sentence (an aside worth
+     knowing but not worth a whole clause) — dotted underline signals
+     "more on hover", same convention as a native title used to imply. */
+  .tip-note { text-decoration: underline dotted; text-underline-offset: 2px; cursor: help; }
 </style>
 </head>
 <body>

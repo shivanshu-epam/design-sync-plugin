@@ -888,6 +888,15 @@ function statusBanner(kind: 'success' | 'error' | 'info', children: (Node | stri
   ]);
 }
 
+// A small scannable fact chip (a filename, a permission scope) — pairs a
+// short visible label with an optional data-tip carrying the "why", instead
+// of writing the why out as prose next to it.
+function tag(text: string, tip?: string): HTMLElement {
+  const t = el('span', { className: 'tag' }, [text]);
+  if (tip) t.setAttribute('data-tip', tip);
+  return t;
+}
+
 // A link to a PR always leaves the plugin — the external-link icon signals
 // that before the click, rather than a bare "PR #12" that looks like it
 // might do something in-place.
@@ -968,7 +977,9 @@ function renderUpdateBanner(): HTMLElement | null {
   const release = state.latestPluginRelease;
   if (!release || release.version === state.dismissedUpdateVersion) return null;
 
-  const dismissBtn = el('button', { className: 'icon-btn', title: 'Dismiss until the next release' }, [icon('XCircle', undefined, 13)]);
+  const dismissBtn = el('button', { className: 'icon-btn' }, [icon('XCircle', undefined, 13)]);
+  dismissBtn.setAttribute('data-tip', 'Dismiss until the next release');
+  dismissBtn.setAttribute('aria-label', 'Dismiss until the next release');
   dismissBtn.onclick = () => {
     state.dismissedUpdateVersion = release.version;
     postToPlugin({ type: 'save-dismissed-update-version', version: release.version });
@@ -1023,7 +1034,8 @@ function render() {
 // buttons without a label are a High-severity anti-pattern).
 function renderConnectionCard(settings: GithubSettings): HTMLElement {
   const card = el('div', { className: 'connect-card' });
-  const testBtn = el('button', { className: 'icon-btn', title: 'Test this connection' }, [icon('Pulse', undefined, 13)]);
+  const testBtn = el('button', { className: 'icon-btn tip-end' }, [icon('Pulse', undefined, 13)]);
+  testBtn.setAttribute('data-tip', 'Test this connection');
   testBtn.setAttribute('aria-label', 'Test connection');
   testBtn.onclick = async () => {
     testBtn.replaceChildren(icon('CircleNotch', 'spin', 13));
@@ -1031,7 +1043,8 @@ function renderConnectionCard(settings: GithubSettings): HTMLElement {
     state.connectStatus = await testConnection(settings);
     render();
   };
-  const editBtn = el('button', { className: 'icon-btn', title: 'Edit connection settings' }, [icon('PencilSimple', undefined, 13)]);
+  const editBtn = el('button', { className: 'icon-btn tip-end' }, [icon('PencilSimple', undefined, 13)]);
+  editBtn.setAttribute('data-tip', 'Edit connection settings');
   editBtn.setAttribute('aria-label', 'Edit connection');
   editBtn.onclick = () => {
     state.connectEditing = true;
@@ -1081,10 +1094,12 @@ function renderConnectForm(container: HTMLElement): void {
   const permsDetails = persistentDetails('connect-permissions', false, 'setup-guide nested', ['What permissions does this need?']);
   permsDetails.appendChild(
     el('div', {}, [
-      el('p', { className: 'hint' }, [
-        'Fine-grained token, scoped to one repo. Needs Contents: read/write, Pull requests: read/write (Sync opens a PR), ' +
-          'Actions: read/write (only for the Status tab\'s "Rebuild Storybook" and "Send test notification" buttons), ' +
-          'and Pages: read-only (only to check whether a deployed Storybook build exists, before offering to open it).',
+      el('p', { className: 'hint' }, ['Fine-grained token, scoped to one repo.']),
+      el('div', { className: 'tag-row' }, [
+        tag('Contents: read/write', 'Reading and committing tokens'),
+        tag('Pull requests: read/write', 'Sync opens a PR'),
+        tag('Actions: read/write', 'Only for Status tab\'s "Rebuild Storybook" and "Send test notification"'),
+        tag('Pages: read-only', 'Only to check whether a deployed Storybook build exists'),
       ]),
     ]),
   );
@@ -1158,9 +1173,10 @@ function renderConnectForm(container: HTMLElement): void {
 
   const loadReposBtn = el(
     'button',
-    { className: 'icon-btn', title: 'Fetch every repository the token above can see, via GET /user/repos' },
+    { className: 'icon-btn' },
     state.loadingRepos ? [icon('CircleNotch', 'spin', 13)] : [icon('ArrowsClockwise', undefined, 13)],
   );
+  loadReposBtn.setAttribute('data-tip', 'Fetch every repo this token can see');
   loadReposBtn.setAttribute('aria-label', 'Load my repos');
   if (state.loadingRepos) loadReposBtn.setAttribute('disabled', 'true');
   loadReposBtn.onclick = () => loadUserRepos(tokenInput.value.trim());
@@ -1275,6 +1291,7 @@ function renderRecentActivity(): HTMLElement | null {
 
 function renderConnectTab(): HTMLElement {
   const container = el('div');
+  container.appendChild(el('h2', {}, ['Connect']));
 
   if (isConfigured(state.settings) && !state.connectEditing) {
     container.appendChild(renderConnectionCard(state.settings));
@@ -1475,6 +1492,8 @@ function renderSyncTab(): HTMLElement {
     return container;
   }
 
+  container.appendChild(el('h2', {}, ['Sync']));
+
   const compareBtn = el(
     'button',
     { className: 'primary' },
@@ -1572,13 +1591,14 @@ function renderSyncTab(): HTMLElement {
       const blocked = remaining > 0 || state.syncing;
       const syncBtn = el(
         'button',
-        {
-          className: 'cta',
-          title: 'Applies your resolutions to Figma immediately, and opens a pull request against ' +
-            (state.settings?.branch ?? 'the configured branch') +
-            ' with the merged tokens — nothing is committed directly to that branch.',
-        },
+        { className: 'cta' },
         loadingLabel(state.syncing, 'Opening pull request…', 'Sync (open PR & update Figma)'),
+      );
+      syncBtn.setAttribute(
+        'data-tip',
+        'Applies your resolutions to Figma immediately, and opens a pull request against ' +
+          (state.settings?.branch ?? 'the configured branch') +
+          ' — nothing is committed directly to that branch.',
       );
       if (!state.syncing) syncBtn.prepend(icon('ArrowsLeftRight', undefined, 13));
       if (blocked) syncBtn.setAttribute('disabled', 'true');
@@ -1663,7 +1683,9 @@ function renderDiffRow(d: DiffEntry): HTMLElement {
       ['github', 'github', 'Use GitHub', 'GithubLogo'],
       ['skip', 'skip', 'Skip', 'XCircle'],
     ] as [Resolution, string, string, IconName][]) {
-      const btn = el('button', { type: 'button', className: cls, title: label }, [icon(iconName, undefined, 12)]);
+      const btn = el('button', { type: 'button', className: cls }, [icon(iconName, undefined, 12)]);
+      btn.setAttribute('data-tip', label);
+      btn.setAttribute('aria-label', label);
       if (current === value) btn.classList.add('active');
       btn.onclick = () => {
         state.resolutions[resKey] = value;
@@ -1737,15 +1759,13 @@ function renderPermissionErrorGuide(error: string, contextId: string): HTMLEleme
 
   const body = el('div', {});
   body.appendChild(
-    el('p', { className: 'hint' }, [
-      'The GitHub token in the Connect tab is missing a permission this action needs. Depending on ' +
-        'what you were doing, it\'s one of: ',
-      el('code', {}, ['Contents: Read and write']),
-      ' (reading/committing tokens), ',
-      el('code', {}, ['Pull requests: Read and write']),
-      ' (Sync opens a PR), or ',
-      el('code', {}, ['Actions: Read and write']),
-      ' ("Rebuild Storybook").',
+    el('p', { className: 'hint' }, ['The GitHub token in the Connect tab is missing one of these:']),
+  );
+  body.appendChild(
+    el('div', { className: 'tag-row' }, [
+      tag('Contents: read/write', 'Reading and committing tokens'),
+      tag('Pull requests: read/write', 'Sync opens a PR'),
+      tag('Actions: read/write', 'Rebuild Storybook'),
     ]),
   );
   body.appendChild(
@@ -1832,8 +1852,8 @@ function renderNotificationsGuide(): HTMLElement {
   body.appendChild(slackDetails);
   body.appendChild(
     el('div', { className: 'tag-row' }, [
-      el('span', { className: 'tag', title: 'Required workflow file in the tokens repo' }, ['.github/workflows/notify-on-sync.yml']),
-      el('span', { className: 'tag', title: 'Required script in the tokens repo' }, ['scripts/notify-on-sync.mjs']),
+      tag('.github/workflows/notify-on-sync.yml', 'Required workflow file in the tokens repo'),
+      tag('scripts/notify-on-sync.mjs', 'Required script in the tokens repo'),
     ]),
   );
 
@@ -1895,18 +1915,27 @@ function renderStorybookGuide(): HTMLElement {
       el('p', { className: 'hint' }, [
         'Point your stories at ',
         el('code', {}, [settings?.path ?? 'design-tokens.json']),
-        ' at the repo root — that\'s the file this plugin keeps synced. Then add a script that writes ',
-        el('code', {}, ['.storybook-sync.json']),
-        ' with ',
-        el('code', {}, ['{ "tokensBlobSha": "<git hash-object ' + (settings?.path ?? 'design-tokens.json') + '>", "builtAt": "<now>" }']),
-        ' — that\'s how this Status tab knows a build is current. Call it explicitly from your ',
-        el('strong', {}, ['deploy']),
-        ' workflow, ',
-        el('em', {}, ['after']),
-        ' Pages actually finishes deploying — not as an automatic ',
-        el('code', {}, ['postbuild-storybook']),
-        ' hook, which would also fire on every CI validation build that never deploys anywhere, making this Status tab think a build is live when nothing was ever published.',
+        ' at the repo root — that\'s the file this plugin keeps synced.',
       ]),
+    );
+    const hookNote = el('span', { className: 'tip-note' }, ['not a postbuild hook']);
+    hookNote.setAttribute(
+      'data-tip',
+      'A postbuild hook also fires on every CI validation build that never deploys — this Status tab would think a build is live when nothing was published.',
+    );
+    body.appendChild(
+      el('p', { className: 'hint' }, [
+        'Then add a script that writes ',
+        el('code', {}, ['.storybook-sync.json']),
+        ', called explicitly from your ',
+        el('strong', {}, ['deploy']),
+        ' workflow after Pages finishes deploying — ',
+        hookNote,
+        ':',
+      ]),
+    );
+    body.appendChild(
+      el('pre', {}, [`{ "tokensBlobSha": "<git hash-object ${settings?.path ?? 'design-tokens.json'}>", "builtAt": "<now>" }`]),
     );
   } else {
     body.appendChild(
@@ -1931,6 +1960,8 @@ function renderStatusTab(): HTMLElement {
     container.appendChild(el('div', { className: 'empty-state' }, ['Set up your GitHub repository in the Connect tab first.']));
     return container;
   }
+
+  container.appendChild(el('h2', {}, ['Status']));
 
   const refreshBtn = el('button', { className: 'primary' }, loadingLabel(state.comparing, 'Checking…', 'Refresh status'));
   if (!state.comparing) refreshBtn.prepend(icon('ArrowsClockwise', undefined, 13));
@@ -2033,11 +2064,8 @@ function renderStatusTab(): HTMLElement {
     container.appendChild(statusBanner(info.cls, [text]));
   }
 
-  const viewBtn = el(
-    'button',
-    { title: `Checks for a dev server at ${LOCAL_STORYBOOK_URL} and opens it if found. A plugin can't start the server itself — no shell access in either execution context.` },
-    loadingLabel(state.checkingLocalStorybook, 'Checking…', 'View Storybook (local)'),
-  );
+  const viewBtn = el('button', {}, loadingLabel(state.checkingLocalStorybook, 'Checking…', 'View Storybook (local)'));
+  viewBtn.setAttribute('data-tip', `Checks for a dev server at ${LOCAL_STORYBOOK_URL} and opens it if found — a plugin can't start the server itself.`);
   if (!state.checkingLocalStorybook) viewBtn.prepend(icon('ArrowSquareOut', undefined, 13));
   if (state.checkingLocalStorybook) viewBtn.setAttribute('disabled', 'true');
   viewBtn.onclick = () => viewLocalStorybook();
@@ -2049,10 +2077,10 @@ function renderStatusTab(): HTMLElement {
   // pagesUrl (when present) is GitHub's own reported html_url — no guessing.
   if (state.pagesStatus === 'configured' && state.pagesUrl) {
     const deployedUrl = state.pagesUrl;
-    const deployedBtn = el(
-      'button',
-      { title: `Opens ${deployedUrl}${state.pagesLastBuildAt ? ` — last deployed ${new Date(state.pagesLastBuildAt).toLocaleString()}` : ''}` },
-      [icon('ArrowSquareOut', undefined, 13), 'View Storybook (deployed)'],
+    const deployedBtn = el('button', {}, [icon('ArrowSquareOut', undefined, 13), 'View Storybook (deployed)']);
+    deployedBtn.setAttribute(
+      'data-tip',
+      `Opens ${deployedUrl}${state.pagesLastBuildAt ? ` — last deployed ${new Date(state.pagesLastBuildAt).toLocaleString()}` : ''}`,
     );
     deployedBtn.onclick = () => postToPlugin({ type: 'open-external', url: deployedUrl });
     viewButtons.push(deployedBtn);
@@ -2118,13 +2146,10 @@ function renderStatusTab(): HTMLElement {
           ? "Couldn't determine Storybook status — see the error above before retrying."
           : 'Run "Refresh status" first so this can tell whether Storybook needs rebuilding.';
 
-  const deployBtn = el(
-    'button',
-    {
-      className: 'primary',
-      title: state.storybookDeploying ? 'Deploy already in progress' : (deployDisabledReason ?? 'Rebuild and redeploy Storybook from the latest tokens on GitHub'),
-    },
-    loadingLabel(state.storybookDeploying, 'Triggering…', 'Rebuild Storybook'),
+  const deployBtn = el('button', { className: 'primary' }, loadingLabel(state.storybookDeploying, 'Triggering…', 'Rebuild Storybook'));
+  deployBtn.setAttribute(
+    'data-tip',
+    state.storybookDeploying ? 'Deploy already in progress' : (deployDisabledReason ?? 'Rebuild and redeploy Storybook from the latest tokens on GitHub'),
   );
   if (!state.storybookDeploying) deployBtn.prepend(icon('ArrowsClockwise', undefined, 13));
   if (state.storybookDeploying || deployDisabledReason) deployBtn.setAttribute('disabled', 'true');
@@ -2589,6 +2614,8 @@ function renderHistoryTab(): HTMLElement {
     return container;
   }
 
+  container.appendChild(el('h2', {}, ['History']));
+
   const loadBtn = el('button', { className: 'primary' }, loadingLabel(state.auditLogLoading, 'Loading…', 'Load history'));
   if (!state.auditLogLoading) loadBtn.prepend(icon('ArrowsClockwise', undefined, 13));
   if (state.auditLogLoading) loadBtn.setAttribute('disabled', 'true');
@@ -2635,14 +2662,16 @@ function renderHistoryTab(): HTMLElement {
     const controls = el('div', { className: 'resolution-controls' });
     const revertBtn = el(
       'button',
-      {
-        title: canRevert
-          ? 'Opens a new pull request restoring every token in this entry to its previous value.'
-          : "This sync added new tokens — revert isn't supported for additions yet. Remove them directly in GitHub if needed.",
-      },
+      {},
       reverting
         ? [icon('CircleNotch', 'spin', 13), 'Reverting…']
         : [icon('ArrowCounterClockwise', undefined, 13), 'Revert this sync'],
+    );
+    revertBtn.setAttribute(
+      'data-tip',
+      canRevert
+        ? 'Opens a new pull request restoring every token in this entry to its previous value.'
+        : "This sync added new tokens — revert isn't supported for additions yet. Remove them directly in GitHub if needed.",
     );
     if (!canRevert || reverting || state.reverting) revertBtn.setAttribute('disabled', 'true');
     revertBtn.onclick = () => runRevert(entry);
