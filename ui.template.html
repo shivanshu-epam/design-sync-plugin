@@ -162,7 +162,10 @@
   .section-divider { border: none; border-top: 1px solid var(--border); margin: 18px 0 14px; }
   .required-mark { color: var(--danger); margin-left: 3px; }
   .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
-  .field label { font-weight: 600; }
+  /* Only the section heading (h2) and a panel's own header row are bold —
+     field labels sit one level below that in the hierarchy, so they stay
+     at normal weight instead of competing with the actual heading. */
+  .field label { font-weight: var(--fw-normal); }
   .field input, .field select {
     padding: 6px 9px;
     border: 1px solid var(--border);
@@ -518,13 +521,17 @@
   /* The header row itself is one shared code path (renderConnectHeader in
      ui.ts) across all three states — its position and shape never move,
      only its icon/text/actions do. */
+  /* This row IS the panel's heading in the setup/editing states — bold,
+     same language as h2, the only bold text in the panel. In the connected
+     state there's no headline text here at all (see .connect-header-repo
+     below), so the bold weight simply has nothing to apply to. */
   .connect-header {
     display: flex;
     align-items: center;
     gap: 10px;
     margin-bottom: 14px;
     font-size: var(--fs-lg);
-    font-weight: var(--fw-medium);
+    font-weight: var(--fw-bold);
     color: var(--text);
   }
   /* Nothing below the header (the connected state with no status banner) —
@@ -534,13 +541,29 @@
   .connect-header-icon { flex-shrink: 0; color: var(--text); }
   .connect-header-icon.connected { color: var(--cta); }
   .connect-header-text { flex: 1 1 auto; min-width: 0; }
-  .connect-header-detail {
+  /* The connected repo identity — a value, not a headline, so it's
+     deliberately NOT bold (only the panel's own heading text is). One
+     consistent monospace treatment for both the repo name and the branch,
+     instead of mixing a bold sans name with a normal-weight mono branch.
+     --surface background keeps it visible against the panel's --bg-subtle
+     fill, same "child flips tone" pattern used elsewhere in this file. */
+  .connect-header-repo {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 5px;
+    background: var(--surface);
+    border-radius: var(--radius);
+    padding: 3px 9px;
     font-family: ui-monospace, 'SF Mono', monospace;
     font-weight: var(--fw-normal);
-    color: var(--text-muted);
     font-size: var(--fs-base);
-    margin-left: 4px;
+    color: var(--text);
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
+  .connect-header-repo .branch { color: var(--text-muted); }
   .connect-header-actions { display: flex; gap: 6px; flex-shrink: 0; }
 
   /* A quiet inline confirmation next to the token field's label, once a

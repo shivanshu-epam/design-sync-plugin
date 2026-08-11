@@ -1056,8 +1056,10 @@ function renderConnectHeader(kind: 'setup' | 'editing' | 'connected', settings: 
     return el('div', { className: 'connect-header' }, [
       icon('CheckCircle', 'connect-header-icon connected', 20),
       el('div', { className: 'connect-header-text' }, [
-        el('strong', {}, [`${settings.owner}/${settings.repo}`]),
-        el('span', { className: 'connect-header-detail' }, [`· ${settings.branch}`]),
+        el('span', { className: 'connect-header-repo' }, [
+          `${settings.owner}/${settings.repo}`,
+          el('span', { className: 'branch' }, [`· ${settings.branch}`]),
+        ]),
       ]),
       el('div', { className: 'connect-header-actions' }, [testBtn, editBtn]),
     ]);
@@ -1206,13 +1208,15 @@ function renderConnectForm(container: HTMLElement): void {
   searchWrap.appendChild(repoSearchInput);
   searchWrap.appendChild(menu);
 
+  // Repos already auto-load once the token validates (see the blur handler
+  // above) — this button's real job is a manual re-fetch (e.g. a repo was
+  // just created on GitHub). Icon-only with only a hover tooltip made that
+  // purpose invisible; visible text now says what it does.
   const loadReposBtn = el(
     'button',
-    { className: 'icon-btn' },
-    state.loadingRepos ? [icon('CircleNotch', 'spin', 13)] : [icon('ArrowsClockwise', undefined, 13)],
+    {},
+    state.loadingRepos ? [icon('CircleNotch', 'spin', 13), 'Reloading…'] : [icon('ArrowsClockwise', undefined, 13), 'Reload'],
   );
-  loadReposBtn.setAttribute('data-tip', 'Fetch every repo this token can see');
-  loadReposBtn.setAttribute('aria-label', 'Load my repos');
   if (state.loadingRepos) loadReposBtn.setAttribute('disabled', 'true');
   loadReposBtn.onclick = () => loadUserRepos(tokenInput.value.trim());
   container.appendChild(el('div', { className: 'btn-row' }, [searchWrap, loadReposBtn]));
