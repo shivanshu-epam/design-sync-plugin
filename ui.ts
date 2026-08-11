@@ -1079,6 +1079,23 @@ function renderConnectForm(container: HTMLElement): void {
   const branchInput = el('input', { type: 'text', placeholder: 'main', value: s.branch });
   const pathInput = el('input', { type: 'text', placeholder: 'design-tokens.json', value: s.path });
   const tokenInput = el('input', { type: 'password', placeholder: 'ghp_...', value: s.token });
+  // Validates the token AND reveals the repo step in one move — reuses the
+  // same call the reload button makes, just triggered by leaving the field
+  // instead of requiring a separate click. Guarded so repeated blurs on an
+  // unchanged value don't refire the request every time.
+  let lastCheckedToken = s.token;
+  tokenInput.addEventListener('blur', () => {
+    const value = tokenInput.value.trim();
+    if (value && value !== lastCheckedToken) {
+      lastCheckedToken = value;
+      loadUserRepos(value);
+    }
+  });
+  // Repo step stays hidden until there's something to show — one decision
+  // at a time instead of a full form dumped up front. Already-configured
+  // connections (editing) skip straight past this since the fields are
+  // already filled in.
+  const showRepoStep = wasConfigured || state.loadingRepos || state.availableRepos.length > 0 || !!state.reposError;
 
   const requiredLabel = (text: string) => el('label', {}, [text, el('span', { className: 'required-mark' }, ['*'])]);
   const row = (labelText: string, input: HTMLElement) =>
@@ -1086,10 +1103,26 @@ function renderConnectForm(container: HTMLElement): void {
   const requiredRow = (labelText: string, input: HTMLElement) =>
     el('div', { className: 'field' }, [requiredLabel(labelText), input]);
 
-  // --- Token ---
-  container.appendChild(requiredRow('Personal access token', tokenInput));
+  // --- Hero: only for the setup/edit flow — the compact connected card
+  // already carries its own visual weight once configured, a second big
+  // intro block here would just compete with it. ---
   container.appendChild(
-    el('p', { className: 'hint connect-security-line' }, [icon('CheckCircle', undefined, 11), 'Stored locally, never uploaded except to api.github.com']),
+    el('div', { className: 'connect-hero' }, [icon('GithubLogo', 'connect-hero-mark', 24), 'Link a GitHub repo to keep tokens in sync']),
+  );
+
+  // --- Token ---
+  const tokenLabelRow = requiredRow('Personal access token', tokenInput);
+  container.appendChild(tokenLabelRow);
+  // Verified once a token has successfully listed repos — a quiet inline
+  // confirmation instead of a separate click, replacing itself the moment
+  // the token changes again (loadUserRepos clears availableRepos on error).
+  if (state.availableRepos.length > 0 && !state.reposError) {
+    tokenLabelRow.querySelector('label')?.appendChild(
+      el('span', { className: 'field-verified' }, [icon('CheckCircle', undefined, 11), 'Verified']),
+    );
+  }
+  container.appendChild(
+    el('p', { className: 'trust-badge' }, [icon('CheckCircle', undefined, 12), 'Stored locally, never uploaded except to api.github.com']),
   );
   const permsDetails = persistentDetails('connect-permissions', false, 'setup-guide nested', ['What permissions does this need?']);
   permsDetails.appendChild(
@@ -1105,6 +1138,9 @@ function renderConnectForm(container: HTMLElement): void {
   );
   container.appendChild(permsDetails);
 
+  if (!showRepoStep) {
+    container.appendChild(el('p', { className: 'hint' }, ['Paste a token above to find your repo.']));
+  } else {
   container.appendChild(el('hr', { className: 'section-divider' }));
 
   // --- Repo search (the default path) ---
@@ -1195,7 +1231,7 @@ function renderConnectForm(container: HTMLElement): void {
   const manualDetails = persistentDetails(
     'connect-manual-entry',
     !s.owner.trim() && !s.repo.trim(),
-    'setup-guide nested',
+    'manual-entry-link',
     ['Enter repository manually'],
   );
   const manualBody = el('div', {});
@@ -1204,6 +1240,7 @@ function renderConnectForm(container: HTMLElement): void {
   manualBody.appendChild(el('div', { className: 'row' }, [row('Branch', branchInput), row('Token file path', pathInput)]));
   manualDetails.appendChild(manualBody);
   container.appendChild(manualDetails);
+  }
 
   const readSettings = (): GithubSettings => ({
     owner: ownerInput.value.trim(),
@@ -1226,6 +1263,13 @@ function renderConnectForm(container: HTMLElement): void {
     postToPlugin({ type: 'save-settings', settings: state.settings });
     state.connectStatus = await testConnection(state.settings);
     if (state.connectStatus.ok && isConfigured(state.settings)) {
+      // A beat before jumping tabs — makes the connection land as a moment
+      // instead of an instant, silent redirect. The pulse itself is
+      // decorative (CSS gates it under prefers-reduced-motion) but the
+      // pause is pacing, not decoration, so it stays either way.
+      connectBtn.replaceChildren(icon('CheckCircle', undefined, 13), 'Connected');
+      connectBtn.classList.add('btn-success-pulse');
+      await new Promise((resolve) => setTimeout(resolve, 450));
       state.connectEditing = false;
       // Don't make them reopen the plugin to see the diff — jump straight
       // to Sync and run the comparison now that we have everything we need.

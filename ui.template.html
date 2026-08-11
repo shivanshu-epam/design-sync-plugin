@@ -484,6 +484,87 @@
   }
   details.setup-guide.nested > div { padding-left: 16px; }
 
+  /* The manual-entry escape hatch — was the same boxed accordion as every
+     other setup guide, giving it equal visual weight to the real path
+     (repo search). Stripped down to a plain small text link so it reads
+     as "the other way," not a parallel primary option. */
+  details.manual-entry-link { margin-top: 10px; }
+  details.manual-entry-link summary {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-normal);
+    color: var(--text-muted);
+  }
+  details.manual-entry-link summary::-webkit-details-marker { display: none; }
+  details.manual-entry-link summary:hover { color: var(--accent); }
+  details.manual-entry-link summary .caret { color: inherit; }
+  details.manual-entry-link > div { margin-top: 8px; }
+
+  /* Connect tab hero — the setup/edit flow's opening beat. A hero mark
+     (the actual GitHub logo, not just an icon-button) plus one line of
+     value copy, so the screen leads with what you're linking and why,
+     not a bare field. */
+  .connect-hero {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    font-size: var(--fs-lg);
+    font-weight: var(--fw-medium);
+    color: var(--text);
+  }
+  .connect-hero-mark { color: var(--text); flex-shrink: 0; }
+
+  /* A quiet inline confirmation next to the token field's label, once a
+     token has successfully listed repos — the "quiet checkmark" instead
+     of a separate verification click. */
+  .field-verified {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    margin-left: 8px;
+    font-size: var(--fs-xs);
+    font-weight: var(--fw-medium);
+    color: var(--cta);
+  }
+
+  /* Trust line, elevated from a plain caption to a small badge — enough
+     presence that it reads as a real reassurance, not boilerplate. */
+  .trust-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin: 6px 0 0;
+    padding: 4px 9px;
+    background: var(--bg-subtle);
+    border-radius: var(--radius);
+    font-size: var(--fs-xs);
+    color: var(--text-muted);
+  }
+  .trust-badge .icon { color: var(--cta); }
+
+  /* Brief success state on the Connect button — a beat of confirmation
+     before the tab switches away, instead of an instant silent redirect.
+     The glow is decorative and skipped under reduced motion; the color
+     swap itself (via .btn-success-pulse's own styling) still shows either
+     way since it's the actual state signal, not motion. */
+  @keyframes connect-pulse {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--cta) 45%, transparent); }
+    100% { box-shadow: 0 0 0 8px color-mix(in srgb, var(--cta) 0%, transparent); }
+  }
+  button.btn-success-pulse {
+    background: var(--cta);
+    border-color: var(--cta);
+    color: #ffffff;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    button.btn-success-pulse { animation: connect-pulse 0.6s ease-out; }
+  }
+
   /* Connect tab: compact "already connected" card, replacing the full form
      once configured — the core ask behind this redesign pass. Was a
      bordered/radius/filled box — the exact "boxing everything" pattern
@@ -516,8 +597,6 @@
   .connect-card-actions .icon-btn:hover:not(:disabled) { color: var(--text); border-color: transparent; }
   .connect-card-detail { font-size: var(--fs-sm); color: var(--text-muted); font-family: ui-monospace, 'SF Mono', monospace; }
   .connect-card-detail strong { color: var(--text); font-weight: var(--fw-bold); font-family: inherit; }
-  .connect-security-line { display: flex; align-items: center; gap: 5px; }
-  .connect-security-line .icon { color: var(--cta); }
 
   /* Small label for a compact fact (a filename, a requirement) — replaces
      a "Requires <code>X</code> and <code>Y</code>..." sentence with
