@@ -938,7 +938,21 @@ function persistentDetails(id: string, defaultOpen: boolean, className: string, 
   const open = state.openDetails[id] ?? defaultOpen;
   const details = el('details', { className, open }) as HTMLDetailsElement;
   details.appendChild(detailsSummary(details, summaryChildren));
+  // Browsers queue an unsolicited 'toggle' event the moment a <details
+  // open> element is first connected to the DOM — with zero user
+  // interaction — but only when it's created already-open. Without this
+  // guard, that phantom event gets recorded as if the user had explicitly
+  // opened it, permanently pinning state.openDetails[id] to true and
+  // silently overriding every future defaultOpen recalculation (e.g. an
+  // accordion whose default should flip closed once some condition changes
+  // would never actually close). Skip exactly that one synthetic event;
+  // every real toggle after it is a genuine click.
+  let skipPhantomToggle = open;
   details.addEventListener('toggle', () => {
+    if (skipPhantomToggle) {
+      skipPhantomToggle = false;
+      return;
+    }
     state.openDetails[id] = details.open;
   });
   return details;
@@ -1038,43 +1052,31 @@ function render() {
 // details.setup-guide already uses (fixed frame, swappable content), one
 // level up: the panel and this header never disappear, only what's inside
 // and below them does.
-function renderConnectHeader(kind: 'setup' | 'editing' | 'connected', settings: GithubSettings | null): HTMLElement {
-  if (kind === 'connected' && settings) {
-    const testBtn = el('button', {}, [icon('Pulse', undefined, 13), 'Test']);
-    testBtn.onclick = async () => {
-      testBtn.replaceChildren(icon('CircleNotch', 'spin', 13), 'Test');
-      testBtn.setAttribute('disabled', 'true');
-      state.connectStatus = await testConnection(settings);
-      render();
-    };
-    const editBtn = el('button', {}, [icon('PencilSimple', undefined, 13), 'Edit']);
-    editBtn.onclick = () => {
-      state.connectEditing = true;
-      state.connectStatus = null;
-      render();
-    };
-    return el('div', { className: 'connect-header' }, [
-      icon('CheckCircle', 'connect-header-icon connected', 20),
-      el('div', { className: 'connect-header-text' }, [
-        // A labeled heading, same convention as the Notifications/Recent
-        // activity accordions right below — the checkmark + repo name alone
-        // read as "just data" with nothing saying what it is.
-        el('div', { className: 'connect-header-label' }, ['Connected repository']),
-        el('span', { className: 'connect-header-repo' }, [
-          `${settings.owner}/${settings.repo}`,
-          el('span', { className: 'branch' }, [`· ${settings.branch}`]),
-        ]),
-      ]),
-      el('div', { className: 'connect-header-actions' }, [testBtn, editBtn]),
-    ]);
-  }
-  return el('div', { className: 'connect-header' }, [
-    icon('GithubLogo', 'connect-header-icon', 20),
-    el('div', { className: 'connect-header-text' }, [
-      el('div', { className: 'connect-header-label' }, [
-        kind === 'editing' ? 'Update your GitHub connection' : 'Link a GitHub repo to keep tokens in sync',
-      ]),
+// Body content for the connected state — the repo/branch identity plus the
+// Test/Edit actions. The heading itself ("GitHub Repo" + a Connected/
+// Disconnected tag) now lives in the accordion's own summary, shared with
+// every other collapsible section in this app (Notifications, Recent
+// activity) instead of being reinvented per state.
+function renderConnectedSummary(settings: GithubSettings): HTMLElement {
+  const testBtn = el('button', {}, [icon('Pulse', undefined, 13), 'Test']);
+  testBtn.onclick = async () => {
+    testBtn.replaceChildren(icon('CircleNotch', 'spin', 13), 'Test');
+    testBtn.setAttribute('disabled', 'true');
+    state.connectStatus = await testConnection(settings);
+    render();
+  };
+  const editBtn = el('button', {}, [icon('PencilSimple', undefined, 13), 'Edit']);
+  editBtn.onclick = () => {
+    state.connectEditing = true;
+    state.connectStatus = null;
+    render();
+  };
+  return el('div', { className: 'connect-summary' }, [
+    el('span', { className: 'connect-header-repo' }, [
+      `${settings.owner}/${settings.repo}`,
+      el('span', { className: 'branch' }, [`· ${settings.branch}`]),
     ]),
+    el('div', { className: 'connect-header-actions' }, [testBtn, editBtn]),
   ]);
 }
 
@@ -1352,21 +1354,33 @@ function renderConnectTab(): HTMLElement {
   const container = el('div');
   container.appendChild(el('h2', {}, ['Connect']));
 
-  // One panel, one header, for every state — the header's own code path is
-  // identical whether setting up, editing, or already connected, so the
-  // frame around it never has to disappear and reappear as something else.
+  // One accordion for every state — same component Notifications/Recent
+  // activity already use, so the heading ("GitHub Repo") and its background
+  // never disappear or get reinvented per state, only the Connected/
+  // Disconnected tag and the body beneath it change. Open by default while
+  // there's something to act on (not yet connected, or actively editing);
+  // collapses once connected, since the tag alone already says that at a
+  // glance — same "closed until it needs attention" convention every other
+  // accordion in this app follows.
   const connected = isConfigured(state.settings) && !state.connectEditing;
-  const kind: 'setup' | 'editing' | 'connected' = connected ? 'connected' : state.connectEditing ? 'editing' : 'setup';
-  const panel = el('div', { className: 'connect-panel' });
-  panel.appendChild(renderConnectHeader(kind, state.settings));
-  if (connected) {
+  const statusTag = tag(connected ? 'Connected' : 'Disconnected');
+  if (connected) statusTag.classList.add('connected');
+  const details = persistentDetails('connect-section', !connected, 'setup-guide', [
+    icon('GithubLogo', undefined, 13),
+    'GitHub Repo',
+    statusTag,
+  ]);
+  const body = el('div', {});
+  if (connected && state.settings) {
+    body.appendChild(renderConnectedSummary(state.settings));
     if (state.connectStatus) {
-      panel.appendChild(statusBanner(state.connectStatus.ok ? 'success' : 'error', [state.connectStatus.message]));
+      body.appendChild(statusBanner(state.connectStatus.ok ? 'success' : 'error', [state.connectStatus.message]));
     }
   } else {
-    renderConnectForm(panel);
+    renderConnectForm(body);
   }
-  container.appendChild(panel);
+  details.appendChild(body);
+  container.appendChild(details);
 
   const activity = renderRecentActivity();
   if (activity) container.appendChild(activity);
