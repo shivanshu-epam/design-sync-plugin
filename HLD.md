@@ -5,6 +5,16 @@ full setup runbook. Companion to [LLD.md](LLD.md) (data models, state
 machines, API contracts, algorithms) and [SYSTEM-REFERENCE.md](SYSTEM-REFERENCE.md)
 (prose walkthrough). As of 2026-08-12, plugin v1.20.0.
 
+## The complete flow, in one diagram
+
+Every box the plugin and the JIRA agent touch, every link between them, and
+every bidirectional relationship (Figma ⇄ `code.ts`, `code.ts` ⇄ `ui.ts`),
+laid out as three lanes: the plugin (top), the shared GitHub hub and its
+downstream fan-out (middle), and the JIRA agent (bottom) — both paths
+converge on the same pull-request gate.
+
+![Design Sync — complete plugin and JIRA agent flow](assets/diagrams/complete-flow.svg)
+
 ---
 
 ## 1. Goals and non-goals
