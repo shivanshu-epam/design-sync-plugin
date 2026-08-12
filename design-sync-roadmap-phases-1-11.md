@@ -103,7 +103,7 @@ Legend:
 | 2 | Bidirectional Variable write-back | ✅ Shipped | — (done) |
 | 3 | PR-based governed sync | ✅ Shipped | — (done) |
 | 4 | CI/CD automation | ✅ Shipped | — (done) |
-| 5 | Versioned audit trail and rollback | ✅ Shipped | 🔴 Open defect on shipped work — see the flagged note in §6 (Revert has no confirmation, no destructive styling) |
+| 5 | Versioned audit trail and rollback | ✅ Shipped, defect fixed v1.20.0 | — (done) |
 | 6 | Multi-brand / multi-file orchestration | ❌ Not started | **Lowest — no current use case** (see §7's new-evidence note — a consultancy/agency buyer profile makes this look more load-bearing; priority not yet revisited) |
 | 7 | Semantic diff and AI-assisted conflict resolution | ❌ Not started | **Medium — not now** |
 | 8 | Cross-platform distribution (Style Dictionary) | ❌ Not started | **Lowest — no current use case** |
@@ -121,7 +121,7 @@ Legend:
 | 20 | Notification routing — groups + urgency-based mentions | ❌ Not started | Unprioritized (new, proposed 2026-08-05) — extends Phase 9 |
 | 21 | SDLC / issue-tracker integration (JIRA, Planner) | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
 | 22 | In-plugin release notifications | ✅ Shipped (v1.19.0) | — (done) |
-| 23 | Visual design language revamp (v2) | 🟡 Partial — direction chosen ("Ledger") and shipped to `main`, not yet in a tagged release (see §24) | **Now** |
+| 23 | Visual design language revamp (v2) | ✅ Shipped, v1.20.0 — all 5 tabs (see §24) | — (done) |
 
 Separately: the plugin's v1.12.0–v1.16.2 release series (icons, progressive disclosure,
 the full tab-by-tab UI redesign) is **not** one of these phases — it's an orthogonal
@@ -629,36 +629,19 @@ jobs:
 
 ## 6. Phase 5 — Versioned audit trail and rollback
 
-**Status**: ✅ Shipped (v1.6.0; UI redesigned v1.16.0–v1.16.2). **Priority**: — (done).
+**Status**: ✅ Shipped (v1.6.0; UI redesigned v1.16.0–v1.16.2; Revert UX defect fixed
+v1.20.0 — see below). **Priority**: — (done).
 
-> **🔴 Open defect, flagged 2026-08-05 — not a new phase, a gap in what's already
-> shipped.** User's own words: "the revert sync feature, its not UX friendly... a
-> complete miss right now." Confirmed against the current code
-> (`ui.ts`, History tab, ~line 2506):
-> - `revertBtn` uses plain default button styling — no `danger`/destructive
->   treatment exists anywhere in this app's button system today (`grep`-confirmed:
->   there is no `.danger` button class, despite a `--danger` color token already
->   existing for banners). A revert is a consequential, PR-opening action; visually
->   it reads identically to any other button.
-> - `revertBtn.onclick = () => runRevert(entry)` fires **immediately** — no
->   confirmation step at all. Every other consequential action in this app (Sync
->   itself, opening a PR) at minimum shows its own effects before committing; Revert
->   skips that entirely, which is inconsistent with the project's own standing "no
->   silent auto-resolution" principle.
->
-> **Fix, scoped small (no dependencies, do this before anything else on this list):**
-> 1. Add a `button.danger` variant to `ui.template.html` (reuses the existing
->    `--danger`/`--danger-hover` tokens already defined for banners — no new colors
->    needed) and apply it to `revertBtn`.
-> 2. Add a confirmation step before `runRevert(entry)` fires — inline (expand the
->    button into a "Confirm revert / Cancel" pair on first click, matching this app's
->    existing preference for inline over modal dialogs) or a `persistentDetails`-style
->    expand — showing: which PR will be opened, how many tokens revert, and their
->    before/after values (already available — `entry.changes`, the same data
->    `renderAuditChangeRow` already renders elsewhere on this exact row).
-> 3. Acceptance: clicking "Revert this sync" no longer opens a PR on the first click;
->    a second, explicit confirmation is required; the button reads as visually
->    distinct (red) from every non-destructive action on the page.
+> **✅ Fixed, v1.20.0** (flagged 2026-08-05, user's own words: "the revert sync
+> feature, its not UX friendly... a complete miss right now"). `revertBtn` is now a
+> two-step arm/confirm button: first click adds a new `button.danger` class (reuses
+> the existing `--danger`/`--danger-hover` tokens, previously unused on any button)
+> and surfaces what's about to happen as visible text — "Opens a new pull request
+> restoring N token(s) to its previous value" — instead of hover-only `data-tip`;
+> second click while armed is what actually calls `runRevert`. Disarms on blur or a
+> 5s timeout so it can't sit silently armed. No modal was introduced (this app has
+> never had one) — the arm/confirm pattern reuses the same "a button mutates its own
+> state on click" language `connectBtn`'s success-pulse already established.
 
 ### Goal
 A structured, queryable history of every sync event (who, what tokens, from where, when),
@@ -2328,10 +2311,9 @@ section.
 
 ## 24. Phase 23 — Visual design language revamp (v2)
 
-**Status**: 🟡 Partial — direction chosen and substantially built on `main`, not yet
-released (no version bump / CHANGELOG entry — still sitting at v1.19.0's changelog even
-though `main` is well ahead of it in commits).
-**Priority**: **Now** — actively being worked, tab by tab.
+**Status**: ✅ Shipped, v1.20.0 — all 5 tabs (Connect, Sync, Status, History, Custom
+Tokens) reviewed and updated; released with a CHANGELOG entry via the `release` skill.
+**Priority**: — (done).
 
 ### Direction chosen: "Ledger"
 Near-black ink on warm paper, one confident indigo accent (`#3f4dff` light /
@@ -2382,15 +2364,19 @@ CSS before any implementation began, then approved.
   solid-fill style were deliberately left alone — functional controls / a high-
   scannability label, not the boxed-container problem this pass targets.
 
-### What's still pending
-- **History, Custom Tokens tabs** haven't had their own full-attention pass yet — they
-  inherited the token-level palette/type-scale shift for free (one stylesheet), and
-  History's diff-rows picked up the Sync-tab fix above too, but neither has had a
-  dedicated review pass (Custom Tokens' table editors in particular haven't been looked
-  at since the original IA redesign).
-- **Not released**: all of the above is on `main` but `package.json`/`CHANGELOG.md`
-  still say v1.19.0. Needs a version bump + changelog entry (the `release` skill) once
-  the remaining tabs are done, or sooner if a checkpoint release is wanted.
+- **Custom Tokens tab**: Title Case heading (was "Custom tokens"), category headings
+  (Dimension/String/Boolean) paired with a count `.tag` matching Sync's identical
+  pattern, row remove buttons given an accessible name, "+ Add token" given an icon —
+  same discoverability/consistency fixes already applied elsewhere. `table.token-table`
+  itself needed no structural change (already on current tokens from the app-wide pass).
+- **History tab**: diff-rows picked up the Sync-tab fix above for free (shared CSS
+  class); the Revert button's own defect is tracked and now fixed under Phase 5 (§6),
+  not here.
+
+### Released
+v1.20.0 (2026-08-12) — see `CHANGELOG.md` for the full entry. Committed locally;
+push to `origin/main` is a separate, explicit step (not done by the `release` skill
+automatically).
 
 ---
 
