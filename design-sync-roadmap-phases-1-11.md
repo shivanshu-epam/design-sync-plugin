@@ -1,4 +1,4 @@
-# Design Sync — Extension Roadmap (Phases 1–23)
+# Design Sync — Extension Roadmap (Phases 1–24)
 
 **Purpose of this document**: This is a build-ready engineering specification for an LLM
 developer (or a human engineer) to implement, phase by phase, on top of the *existing*
@@ -122,6 +122,7 @@ Legend:
 | 21 | SDLC / issue-tracker integration (JIRA, Planner) | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
 | 22 | In-plugin release notifications | ✅ Shipped (v1.19.0) | — (done) |
 | 23 | Visual design language revamp (v2) | ✅ Shipped, v1.20.0 — all 5 tabs (see §24) | — (done) |
+| 24 | JIRA-triggered design token agent (ticket-to-PR automation) | ❌ Not started (new, proposed 2026-08-12) | **Highest — Now** (see §25) |
 
 Separately: the plugin's v1.12.0–v1.16.2 release series (icons, progressive disclosure,
 the full tab-by-tab UI redesign) is **not** one of these phases — it's an orthogonal
@@ -2380,7 +2381,167 @@ automatically).
 
 ---
 
-## 25. Cross-phase dependency graph
+## 25. Phase 24 — JIRA-triggered design token agent (ticket-to-PR automation)
+
+**Status**: ❌ Not started (new, proposed 2026-08-12). **Priority**: **Highest — Now.**
+
+### Goal
+When a new JIRA ticket requesting a design token change is created (and moved into a
+specific trigger status), an agent fetches it, determines the concrete token change
+being requested, makes that change on a branch, opens a PR against the tokens repo,
+and keeps the ticket's status and comments in sync with the PR's lifecycle — without a
+human ever touching Figma or the plugin for that specific request.
+
+### Problem addressed
+User's own framing: "whenever any new ticket is created for design token, our agent
+should fetch it, work on it, and push the changes by opening PR, and change the ticket
+status, and put final comments for review." This is the **reverse direction** of
+Phase 21 (§22) — Phase 21 makes a *sync event* produce a ticket; this phase makes a
+*ticket* produce a sync event. It's also a materially different capability from
+everything else in this document: every phase so far reacts to a change a human already
+made in Figma or GitHub. This phase originates the change itself, from a natural-
+language (or semi-structured) request, which is a new class of risk this system hasn't
+taken on before and needs its own explicit guardrails, not a reuse of Phase 19's
+auto-merge posture.
+
+### Dependencies
+Requires Phase 1 (token model — shipped), Phase 3 (PR-based sync — shipped, this phase
+reuses its branch/commit/PR mechanics), Phase 4 (CI validation — shipped, this phase's
+PRs run through the same `validate-tokens.mjs`). Shares its credential/identity model
+with Phase 19 (GitHub App, not a PAT) and its JIRA API surface with Phase 21 — but does
+**not** require either of those phases to be built first; this phase's JIRA client and
+bot identity are self-contained, Phase 19/21 can adopt the same plumbing later instead
+of this phase waiting on them.
+
+### Trigger — deliberately narrow
+A JIRA **webhook** (not polling — polling means either missed-ticket latency or wasted
+API calls), scoped to:
+- One project key (e.g. `DS`).
+- One label or issue type (e.g. `design-token-request`).
+- Firing only on transition **into** a specific trigger status (e.g. "Ready for Agent")
+  — not on ticket creation itself, so a reporter can finish writing/editing the ticket
+  before the agent acts on a half-written draft.
+
+Firing on "any new ticket" in a shared JIRA instance would trigger on unrelated
+engineering work — the trigger has to be an explicit, deliberate signal a ticket author
+opts into, the same way this project has never auto-acted on ambiguous input anywhere
+else (README's own standing "no silent auto-resolution" principle applies here too).
+
+### Ticket classification — the real fork in this design
+Two shapes of ticket, handled differently:
+
+1. **Structured** — a JIRA issue template with explicit custom fields (Token key,
+   Current value, New value, Reason). Parsing this is close to deterministic: read the
+   fields, validate the token key exists, done. Low interpretation risk.
+2. **Free-text** — a plain description ("make the primary button a bit darker"). This
+   requires genuine judgment: which token, what new value, whether it cascades to
+   tokens that reference it. This is the highest-risk step in the entire pipeline — an
+   LLM is making an actual design decision here, not moving data around.
+
+If the ticket (of either shape) doesn't resolve to an unambiguous, existing token and a
+concrete new value, **the agent's job is to comment on the ticket asking for
+clarification and stop** — never guess and push a best-effort change. This is a hard
+rule, not a tunable threshold.
+
+### Algorithm
+1. Webhook fires on trigger-status transition → fetch the full ticket (summary,
+   description, custom fields, any linked Figma URL/attachment) via JIRA's REST API.
+2. Classify per the structured/free-text split above. Resolve the target token(s)
+   against the current `design-tokens.json` (reuse Phase 1's `resolveToken`/reference-
+   chain logic to know if this cascades to other tokens).
+3. If unresolvable → post a clarification comment on the ticket, transition it to a
+   "Needs Info" status (or leave it, if that status doesn't exist yet — see JIRA setup
+   below), stop. No branch, no PR.
+4. If resolvable → create a branch off the configured branch (same naming convention
+   `syncBranchName()` already uses elsewhere), edit `design-tokens.json`, run
+   `validate-tokens.mjs` before committing anything.
+5. Commit, open a PR. PR description includes: the ticket link, a plain-language
+   restatement of what the agent understood the request to be ("Interpreted as: darken
+   `color/brand/primary-button` from `#3678E2` to `#2a5ec4`"), and the diff. This
+   restatement is the actual review surface for step 2's risk — a reviewer must be able
+   to tell instantly whether the agent misread the ticket without re-deriving the
+   request themselves.
+6. Ticket transitions to "In Review", comment posted linking the PR.
+7. CI runs (Phase 4's existing validator, plus Phase 13's contrast lint if/when built).
+   On failure: ticket → "Needs Input" (or back to the trigger status), failure reason
+   commented directly on the ticket, not left buried in a CI log a ticket reporter has
+   no access to.
+8. On PR merge: ticket → "Done", final comment with the merged PR link and the actual
+   shipped value. On PR closed without merging: ticket → "Rejected"/equivalent, closer's
+   reason pulled into the comment if one was given.
+
+### The one guardrail that matters most: no auto-merge, ever
+Phase 19's auto-merge policy is about merging PRs a **human already authored** via
+Figma — the change is known-intentional, only the merge decision is automated. This
+phase's PRs are **agent-originated** from an interpretation of text, which is a
+categorically higher-risk action. This pipeline must never merge its own PR under any
+policy, even a permissive one — a human approves every single one. This is a deliberate
+design decision, not a placeholder for "add auto-merge later."
+
+### Credentials — new setup required, listed explicitly here since it's this phase's
+own gating question
+- **JIRA API token** (Atlassian API token, or a JIRA Cloud app/OAuth client if
+  preferred over a personal token) with permission to: read issues in the target
+  project, write comments, transition issue status. Stored as a CI secret in the
+  `design-tokens` repo (`JIRA_API_TOKEN`, `JIRA_EMAIL`, `JIRA_BASE_URL`) — same trust
+  boundary already established for Teams/Slack webhook URLs (Phase 9) and never touches
+  the plugin/Figma side or per-machine `clientStorage`.
+- **JIRA webhook** configured on the JIRA side to call a new GitHub Actions
+  `repository_dispatch` (or a small intermediary endpoint — see open question below)
+  when a ticket transitions into the trigger status.
+- **GitHub identity for the agent's commits/PRs** — a GitHub App installation token
+  (same reasoning as Phase 19: scoped, short-lived, independently revocable, shows up
+  in PR history as "opened by [App Name]," never impersonates a person), not a human's
+  PAT and not the same bot identity necessarily as Phase 19/21 use, though it can be if
+  those are built first.
+
+### Open question to resolve before build (not answered by this doc alone)
+JIRA webhooks need a public HTTPS endpoint to call. This project has no standing
+backend (Phase 10 is explicitly not-now) — the two realistic options are (a) a JIRA
+Automation rule that calls the GitHub REST API directly
+(`POST /repos/.../dispatches`) with a stored GitHub token, needing no new hosting at
+all, or (b) a small serverless function (e.g. a single Cloudflare Worker/AWS Lambda)
+as a thin relay. Option (a) is simpler and fits this project's consistent preference
+for "no new infrastructure where a config file will do" — recommended default, but
+confirm JIRA Automation is available on the user's JIRA plan before committing to it.
+
+### UI changes
+None required in the Figma plugin itself — this phase runs entirely in CI/JIRA, the
+same "team-shared automation lives in a reviewable file/workflow, not a plugin-side
+form" pattern every other integration phase in this doc already follows (Phase 9, 19,
+20, 21). The plugin's History tab could optionally show agent-originated PRs with a
+distinct "opened by agent, from ticket DS-123" badge, reusing the existing audit-entry
+row component — a nice-to-have, not required for v1.
+
+### Acceptance criteria
+- A structured ticket with an unambiguous field set produces a correct PR with no
+  human interpretation needed to verify it.
+- A free-text ticket that resolves unambiguously produces a PR whose "Interpreted as"
+  line a human can confirm or reject in under 10 seconds without re-reading the ticket.
+- A free-text ticket that does **not** resolve unambiguously never produces a branch or
+  PR — it produces a clarification comment on the ticket instead.
+- No PR from this pipeline is ever merged without an explicit human approval, regardless
+  of how "safe" the change looks.
+- The plugin itself never sees or stores the JIRA credential — same boundary already
+  enforced for every other team-shared secret in this system.
+
+### Rejected alternatives
+- **Auto-merge low-risk agent-originated changes (e.g. single-token, no cascade).**
+  Rejected — see the guardrail section above. The risk being gated here is
+  *interpretation* risk, not *change size* risk, and interpretation risk doesn't shrink
+  just because the resulting diff is small.
+- **Have the plugin itself poll JIRA from `ui.ts`.** Rejected for the same reason every
+  other team-shared-credential integration in this doc rejects a plugin-side
+  implementation — JIRA access is a team-shared credential, not a per-machine one, and
+  belongs in CI, not `clientStorage`.
+- **Skip the "Needs Info" clarification path and just do the agent's best guess.**
+  Rejected outright — directly contradicts this project's standing no-silent-
+  auto-resolution principle, and free-text ticket interpretation is exactly the kind of
+  ambiguity that principle exists for.
+
+---
+
+## 26. Cross-phase dependency graph
 
 ```
 Phase 1 (token model) ───────┬──────────────────────────────────────────┐
@@ -2427,29 +2588,34 @@ Phase 20 (notification routing) — needs Phase 9 (notifications half). [UNPRIOR
    reuses Phase 19's policy-file pattern, but does NOT require Phase 19 itself.
 
 Phase 21 (SDLC/issue-tracker) — needs Phase 5. [UNPRIORITIZED]
-Phase 22 (in-plugin release notices) — no dependencies, fully independent. [UNPRIORITIZED]
-Phase 23 (visual design v2) — no technical dependencies. [IN PROGRESS — Connect tab
-   + app-wide token/heading/tooltip pass shipped to main; Sync/History/Custom Tokens
-   still pending, not yet released as a version bump]
+Phase 22 (in-plugin release notices) — no dependencies. [SHIPPED v1.19.0]
+Phase 23 (visual design v2) — no technical dependencies. [SHIPPED v1.20.0 — all 5 tabs]
+
+Phase 24 (JIRA-triggered token agent) — needs Phase 1 + Phase 3 + Phase 4 (all
+   shipped) — no blockers, buildable now. [HIGHEST PRIORITY — NOW]
+   ├─► Shares its bot-identity model (GitHub App, not a PAT) with Phase 19, but does
+   │      NOT require Phase 19 — this phase's identity is self-contained.
+   └─► Shares its JIRA API surface with Phase 21, but does NOT require Phase 21 either
+          — Phase 21 can adopt this phase's JIRA client later instead of duplicating it.
 ```
 
-## 26. Suggested build order
+## 27. Suggested build order
 
-Reflects the 2026-08-05 priority decisions above — phases marked Lowest/Medium/Blocked
+Reflects the 2026-08-12 priority decisions above — phases marked Lowest/Medium/Blocked
 are listed for completeness, not as a recommendation to pick them up now.
 
-**Shipped** (for reference, not re-sequencing): Phase 1 → Phase 4 → Phase 3 → Phase 5 →
-Phase 2 → Phase 9 (notifications half only) → Phase 22 (v1.19.0).
+**Shipped** (for reference, not re-sequencing): Phase 1 → Phase 4 → Phase 3 → Phase 5
+(incl. its Revert UX fix, v1.20.0) → Phase 2 → Phase 9 (notifications half only) →
+Phase 22 (v1.19.0) → Phase 23 (v1.20.0).
 
-**Do first, ahead of any new phase** — this is a defect on already-shipped work, not
-new capability, and it's small:
+**Do first — highest priority, no blockers:**
 
-0. **Phase 5's Revert UX fix** (see the flagged note in §6) — a `button.danger` variant
-   plus a confirmation step before `runRevert` fires. No dependencies, touches one
-   existing screen, and it's the one item on this whole list a user explicitly called
-   "a complete miss."
+0. **Phase 24 (JIRA-triggered design token agent)** — needs only Phase 1 + 3 + 4, all
+   shipped. See §25 for the full spec; see the implementation-planning discussion below
+   for what's needed to actually start (JIRA-side setup, GitHub App, hosting decision
+   for the webhook relay).
 
-**If/when work resumes on new phases**, in dependency-respecting order:
+**If/when work resumes on the rest of the backlog**, in dependency-respecting order:
 
 1. **Phase 16 (concurrent-sync advisory lock)** — needs only Phase 3 (shipped), cheapest
    remaining phase relative to payoff: closes a real, documented known-limitation with
@@ -2470,9 +2636,11 @@ new capability, and it's small:
    *pattern*.
 8. **Phase 19 (governance agent)** — needs Phase 3 + 5 (both shipped). Bigger than #1–7
    above — new auth surface (a GitHub App, not a PAT) — sequence after the smaller wins
-   so the team has full context on the repo before adding a new credential type.
+   so the team has full context on the repo before adding a new credential type. Can
+   reuse Phase 24's GitHub App identity instead of minting a second one.
 9. **Phase 21 (SDLC/issue-tracker integration)** — needs Phase 5 (shipped), pairs
-    naturally with Phase 19's agent identity once that exists.
+    naturally with Phase 19's agent identity once that exists, and can reuse Phase 24's
+    JIRA client instead of building a second one.
 10. **Phase 6 (multi-brand)** — **lowest priority, but re-flagged** (§7's new-evidence
     note): revisit if a consultancy/agency-style multi-client need shows up, which this
     project's own test data suggests isn't hypothetical.
@@ -2488,12 +2656,6 @@ new capability, and it's small:
     is picked back up.
 15. **Phase 15 (blast-radius preview)** — blocked on Phase 11 (and therefore transitively
     on Phase 10). Last in the chain by construction.
-
-**Phase 23 (visual design v2)** is intentionally absent from the numbered list above —
-it isn't blocked on anything technical and is currently the phase actually being worked
-(see §24): direction chosen, Connect tab + app-wide token/heading/tooltip pass shipped
-to `main`, Sync/History/Custom Tokens still pending. Running in parallel with the
-"do first" Revert UX fix above, not sequenced against the other unstarted phases.
 
 ---
 
