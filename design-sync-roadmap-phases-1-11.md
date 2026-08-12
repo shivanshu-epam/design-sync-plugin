@@ -2369,13 +2369,25 @@ CSS before any implementation began, then approved.
 - **Status tab**: the Figma↔GitHub diff table (a 4-column `<table>`, unreadable/
   scroll-inducing in a ~320px panel) replaced with the same stacked diff-row layout the
   Sync tab already used for identical data — no horizontal scroll at any panel width.
+- **Sync tab — diff rows**: `.diff-row` still had a full ring border + a distinct
+  `--warn-bg` fill just for conflicts (the "box every container" pattern already
+  replaced everywhere else). Moved to the same `.status-banner` treatment — neutral
+  `--bg-subtle` fill, a colored left edge as the only status signal — which improved
+  History's plain diff-rows and Status tab's diff-rows for free (shared class). The
+  `.diff-badge` ("Conflict"/"New in Figma"/"New in GitHub") also went from uniform gray
+  to a status-matched soft tint (`color-mix` against `--surface`, no new tokens), so the
+  badge, the row's left edge, and the Figma/GitHub value labels now all agree on one
+  color per row instead of the badge being the one element with no signal. Removed the
+  now-dead `--warn-bg` token. `.resolution-toggle`'s border and `.diff-value-label`'s
+  solid-fill style were deliberately left alone — functional controls / a high-
+  scannability label, not the boxed-container problem this pass targets.
 
 ### What's still pending
-- **Sync, History, Custom Tokens tabs** haven't had their own full-attention pass yet —
-  they inherited the token-level palette/type-scale shift for free (one stylesheet),
-  but no component-level Ledger treatment (diff-row/toggle/badge numbers-as-content
-  styling shown in the original comparison mockup, Custom Tokens' table editors, etc.).
-  Same tab-by-tab cadence as this whole pass so far.
+- **History, Custom Tokens tabs** haven't had their own full-attention pass yet — they
+  inherited the token-level palette/type-scale shift for free (one stylesheet), and
+  History's diff-rows picked up the Sync-tab fix above too, but neither has had a
+  dedicated review pass (Custom Tokens' table editors in particular haven't been looked
+  at since the original IA redesign).
 - **Not released**: all of the above is on `main` but `package.json`/`CHANGELOG.md`
   still say v1.19.0. Needs a version bump + changelog entry (the `release` skill) once
   the remaining tabs are done, or sooner if a checkpoint release is wanted.
