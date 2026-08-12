@@ -106,6 +106,10 @@ Solid arrows are automatic (fired by a push, webhook, or merge). Dotted
 arrows are the two manual triggers in the whole system — a human clicking
 "Rebuild Storybook" or "Send test notification" in the plugin's Status tab.
 
+**Quick visual** (static SVG, renders anywhere — no Mermaid support needed):
+
+![Design Sync architecture overview](assets/diagrams/overview.svg)
+
 ---
 
 ## 4. Component inventory
@@ -182,6 +186,11 @@ This section gives the one-line shape of each.
 nothing inside GitHub exists yet to provide a token at that point. Every
 subsequent GitHub-side action in the pipeline runs inside a workflow and
 uses the auto-provided token instead.
+
+**Quick visual** — every credential, what stores it, what consumes it, and
+what it authenticates to:
+
+![Design Sync credential and integration flow](assets/diagrams/credential-flow.svg)
 
 **No GitHub App exists anywhere in this system.** Every GitHub-side write
 (sync PRs, agent PRs, Pages deploys) uses either a user's own fine-grained

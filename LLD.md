@@ -539,6 +539,19 @@ sequenceDiagram
 
 ---
 
+### 5.7 Quick visuals (static SVG, renders anywhere)
+
+Figma ↔ GitHub sync, the same six steps as §5.1:
+
+![Figma to GitHub sync flow](assets/diagrams/sync-flow.svg)
+
+The JIRA agent's full decision tree — happy path, both bounce conditions,
+and both PR outcomes in one diagram (covers §5.2–§5.5):
+
+![JIRA ticket agent decision flow](assets/diagrams/jira-decision-flow.svg)
+
+---
+
 ## 6. Module / function inventory
 
 | File | Function | In → Out | Side effects |
