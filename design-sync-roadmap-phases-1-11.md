@@ -2416,13 +2416,18 @@ knowledge**:
    Settings → Actions → General → "Allow GitHub Actions to create and approve pull
    requests" checkbox, off by default, has to be explicitly enabled too.
 
-### What's not yet tested (not a defect — just not exercised yet)
-- The clarification/bounce-to-"In Design" path (missing field, wrong "Current value,"
-  nonexistent token, or a reference-kind token) — the happy path is proven, the
-  guardrail path isn't yet, though the logic was verified in isolation before shipping
-  (see the original implementation commit's own verification notes).
-- The close-without-merging path on `ticket-agent-resolve.yml` (only merge has been
-  exercised).
+### Fully validated, all three paths (2026-08-12)
+- **Happy path**: `DS-3`, a valid structured ticket → PR → merge → "Live."
+- **Clarification/bounce path**: a ticket with a deliberately wrong "Current value" →
+  no branch, no PR, a comment explaining the mismatch, ticket moved to "In Design."
+- **Close-without-merge path**: `DS-`-numbered ticket → PR #41 opened → closed without
+  merging → `ticket-agent-resolve.yml` fired, commented, moved the ticket back to
+  "In Design."
+
+Nothing outstanding on this phase for v1. Free-text ticket interpretation (an LLM
+reading unstructured prose instead of the structured field format) remains a
+deliberately separate, unscoped future extension — see the "What this pass deliberately
+does not do" note in the original implementation plan.
 
 ### Goal
 When a new JIRA ticket requesting a design token change is created (and moved into a
