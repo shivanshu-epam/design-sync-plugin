@@ -207,6 +207,11 @@
      & compare). */
   button.cta { background: var(--cta); color: #ffffff; border-color: var(--cta); font-weight: var(--fw-bold); }
   button.cta:hover:not(:disabled) { background: var(--cta-hover); border-color: var(--cta-hover); color: #ffffff; }
+  /* Same solid-fill treatment as .primary/.cta, for the one class of action
+     that's actually destructive (History's Revert, once armed) — --danger
+     existed as a token already but nothing used it on a button. */
+  button.danger { background: var(--danger); color: #ffffff; border-color: var(--danger); font-weight: var(--fw-bold); }
+  button.danger:hover:not(:disabled) { background: var(--danger-hover); border-color: var(--danger-hover); color: #ffffff; }
   button:disabled { opacity: 0.5; cursor: not-allowed; }
   button + button { margin-left: 6px; }
   /* gap handles spacing (buttons, and now also tags/icons mixed in) —
@@ -630,7 +635,13 @@
     letter-spacing: 0.02em;
     color: var(--text-muted);
     text-transform: uppercase;
+    vertical-align: middle;
   }
+  /* A count tag sitting directly in a plain (non-flex) h2, e.g. Custom
+     Tokens' category headings — .diff-group/.status-section-heading
+     already space their own tags via flex gap, this is the fallback for
+     everywhere else. */
+  h2 .tag { margin-left: 6px; }
 
   /* Styled tooltip, no JS — an app-consistent replacement for the browser's
      native title="" (unstyled, slow to appear, invisible until hovered).

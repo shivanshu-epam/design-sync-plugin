@@ -1417,6 +1417,8 @@ function buildTextTokenEditor(
     const nameInput = el('input', { type: 'text', value: name, placeholder: namePlaceholder });
     const valueInput = el('input', { type: 'text', value, placeholder: valuePlaceholder });
     const removeBtn = el('button', { className: 'icon-btn', textContent: '✕' });
+    removeBtn.setAttribute('aria-label', 'Remove');
+    removeBtn.setAttribute('data-tip', 'Remove');
     const tr = el('tr', {}, [el('td', {}, [nameInput]), el('td', {}, [valueInput]), el('td', {}, [removeBtn])]);
     removeBtn.onclick = () => {
       tr.remove();
@@ -1432,7 +1434,7 @@ function buildTextTokenEditor(
   }
   table.appendChild(tbody);
 
-  const addBtn = el('button', { textContent: '+ Add token' });
+  const addBtn = el('button', {}, [icon('PlusCircle', undefined, 13), 'Add token']);
   addBtn.onclick = () => addRow('', '');
 
   const container = el('div', {}, [table, el('div', { className: 'btn-row' }, [addBtn])]);
@@ -1464,6 +1466,8 @@ function buildBooleanTokenEditor(entries: [string, DesignToken<boolean>][]): {
     const nameInput = el('input', { type: 'text', value: name, placeholder: 'isDarkModeDefault' });
     const valueInput = el('input', { type: 'checkbox', checked: value });
     const removeBtn = el('button', { className: 'icon-btn', textContent: '✕' });
+    removeBtn.setAttribute('aria-label', 'Remove');
+    removeBtn.setAttribute('data-tip', 'Remove');
     const tr = el('tr', {}, [el('td', {}, [nameInput]), el('td', {}, [valueInput]), el('td', {}, [removeBtn])]);
     removeBtn.onclick = () => {
       tr.remove();
@@ -1479,7 +1483,7 @@ function buildBooleanTokenEditor(entries: [string, DesignToken<boolean>][]): {
   }
   table.appendChild(tbody);
 
-  const addBtn = el('button', { textContent: '+ Add token' });
+  const addBtn = el('button', {}, [icon('PlusCircle', undefined, 13), 'Add token']);
   addBtn.onclick = () => addRow('', false);
 
   const container = el('div', {}, [table, el('div', { className: 'btn-row' }, [addBtn])]);
@@ -1499,39 +1503,35 @@ function buildBooleanTokenEditor(entries: [string, DesignToken<boolean>][]): {
 
 function renderTokensTab(): HTMLElement {
   const container = el('div');
-  container.appendChild(el('h2', {}, ['Custom tokens']));
+  container.appendChild(el('h2', {}, ['Custom Tokens']));
   container.appendChild(
     el('p', { className: 'hint' }, [
       'Figma has no native style type for spacing/radius, arbitrary strings, or booleans without an Enterprise Variables plan, so these are tracked here and stored with the file.',
     ]),
   );
 
-  const dimensionHeading = el('h2', {}, ['Dimension']);
+  // Same category-heading-plus-count-tag pattern Sync's diff-group headings
+  // already use — this tab never picked it up despite grouping rows the
+  // same way.
+  const dimensionEntries = Object.entries(state.figmaTokens.dimension);
+  const dimensionHeading = el('h2', {}, ['Dimension', el('span', { className: 'tag' }, [String(dimensionEntries.length)])]);
   dimensionHeading.style.marginTop = '14px';
   container.appendChild(dimensionHeading);
-  const dimensionEditor = buildTextTokenEditor(
-    'dimension',
-    Object.entries(state.figmaTokens.dimension),
-    'spacing/sm',
-    '8px',
-  );
+  const dimensionEditor = buildTextTokenEditor('dimension', dimensionEntries, 'spacing/sm', '8px');
   container.appendChild(dimensionEditor.container);
 
-  const stringHeading = el('h2', {}, ['String']);
+  const stringEntries = Object.entries(state.figmaTokens.string);
+  const stringHeading = el('h2', {}, ['String', el('span', { className: 'tag' }, [String(stringEntries.length)])]);
   stringHeading.style.marginTop = '14px';
   container.appendChild(stringHeading);
-  const stringEditor = buildTextTokenEditor(
-    'string',
-    Object.entries(state.figmaTokens.string),
-    'font/primary-family',
-    'Inter',
-  );
+  const stringEditor = buildTextTokenEditor('string', stringEntries, 'font/primary-family', 'Inter');
   container.appendChild(stringEditor.container);
 
-  const booleanHeading = el('h2', {}, ['Boolean']);
+  const booleanEntries = Object.entries(state.figmaTokens.boolean);
+  const booleanHeading = el('h2', {}, ['Boolean', el('span', { className: 'tag' }, [String(booleanEntries.length)])]);
   booleanHeading.style.marginTop = '14px';
   container.appendChild(booleanHeading);
-  const booleanEditor = buildBooleanTokenEditor(Object.entries(state.figmaTokens.boolean));
+  const booleanEditor = buildBooleanTokenEditor(booleanEntries);
   container.appendChild(booleanEditor.container);
 
   const saveBtn = el('button', { className: 'primary', textContent: 'Save all' });
@@ -2767,15 +2767,53 @@ function renderHistoryTab(): HTMLElement {
         ? [icon('CircleNotch', 'spin', 13), 'Reverting…']
         : [icon('ArrowCounterClockwise', undefined, 13), 'Revert this sync'],
     );
-    revertBtn.setAttribute(
-      'data-tip',
-      canRevert
-        ? 'Opens a new pull request restoring every token in this entry to its previous value.'
-        : "This sync added new tokens — revert isn't supported for additions yet. Remove them directly in GitHub if needed.",
-    );
     if (!canRevert || reverting || state.reverting) revertBtn.setAttribute('disabled', 'true');
-    revertBtn.onclick = () => runRevert(entry);
     controls.appendChild(revertBtn);
+
+    // Reverting opens a real PR and (on success) rewrites Figma immediately
+    // — a single accidental click used to be enough to fire it. Arm/confirm
+    // instead of a modal (this app has never had one, and the existing
+    // "click again" success-pulse pattern already fits this interaction
+    // language): first click turns the button red and explains what's about
+    // to happen in visible text, not just a hover tooltip; a second click
+    // while armed is what actually calls runRevert. Disarms on blur (click
+    // anywhere else) and after 5s regardless, so it can never sit silently
+    // armed.
+    let armed = false;
+    let disarmTimer: ReturnType<typeof setTimeout> | null = null;
+    const hint = el('p', { className: 'hint' }, [
+      `Opens a new pull request restoring ${entry.changes.length} token${entry.changes.length === 1 ? '' : 's'} to its previous value.`,
+    ]);
+    const disarm = () => {
+      if (!armed) return;
+      armed = false;
+      if (disarmTimer) clearTimeout(disarmTimer);
+      revertBtn.classList.remove('danger');
+      revertBtn.replaceChildren(icon('ArrowCounterClockwise', undefined, 13), 'Revert this sync');
+      hint.remove();
+    };
+    if (canRevert) {
+      revertBtn.setAttribute('data-tip', 'Opens a new pull request restoring every token in this entry to its previous value.');
+      revertBtn.addEventListener('blur', disarm);
+      revertBtn.onclick = () => {
+        if (!armed) {
+          armed = true;
+          revertBtn.classList.add('danger');
+          revertBtn.replaceChildren(icon('WarningCircle', undefined, 13), 'Click again to confirm');
+          revertBtn.removeAttribute('data-tip');
+          item.appendChild(hint);
+          disarmTimer = setTimeout(disarm, 5000);
+          return;
+        }
+        disarm();
+        runRevert(entry);
+      };
+    } else {
+      revertBtn.setAttribute(
+        'data-tip',
+        "This sync added new tokens — revert isn't supported for additions yet. Remove them directly in GitHub if needed.",
+      );
+    }
     item.appendChild(controls);
 
     container.appendChild(item);
