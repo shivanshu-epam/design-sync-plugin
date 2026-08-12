@@ -65,6 +65,12 @@ build time).
   other tab's Title Case; its three category headings never got the
   count-tag treatment Sync's identical pattern already has; each row's
   remove button had no accessible name at all.
+- **Nav tab hover was invisible in light mode.** `.tab-btn` never defined
+  its own `:hover` state, so it fell back to the generic `button:hover`
+  rule (`color: var(--text)`) — in light mode `--text` is near-black,
+  identical to the header's always-dark `--chrome-bg`, so a hovered tab's
+  label rendered the same color as the bar it sits on. Added an explicit
+  `.tab-btn:hover` using the chrome tokens instead of the page tokens.
 - A real browser bug in the shared accordion helper (`persistentDetails`):
   some browsers fire an unsolicited `toggle` event the instant a
   `<details open>` element is first inserted into the DOM, with zero user

@@ -142,6 +142,15 @@
   .tab-btn .icon { color: var(--chrome-text); }
   .tab-btn.active { color: var(--chrome-text-active); border-bottom-color: var(--accent); }
   .tab-btn.active .icon { color: var(--accent); }
+  /* Explicit hover, not left to the generic button:hover rule — that rule
+     sets color: var(--text), which in light mode is near-black, identical
+     to this header's always-dark --chrome-bg. A hovered tab's label was
+     rendering the same color as the bar it sits on. Chrome tokens, not
+     page tokens, since this bar stays dark in both themes. */
+  .tab-btn:hover:not(:disabled) { color: var(--chrome-text-active); border-bottom-color: transparent; }
+  .tab-btn:hover:not(:disabled) .icon { color: var(--chrome-text-active); }
+  .tab-btn.active:hover:not(:disabled) { border-bottom-color: var(--accent); }
+  .tab-btn.active:hover:not(:disabled) .icon { color: var(--accent); }
 
   main#panel { flex: 1; overflow-y: auto; padding: 12px; background: var(--bg); }
   footer.app-footer {
