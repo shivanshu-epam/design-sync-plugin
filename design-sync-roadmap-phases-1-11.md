@@ -117,9 +117,9 @@ Legend:
 | 16 | Concurrent-sync advisory lock | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
 | 17 | Deep-linking between Storybook/status page and Figma | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
 | 18 | Dedicated Storybook repo (split from `design-tokens`) | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
-| 19 | PR governance agent (policy-based auto-merge) | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
+| 19 | PR governance agent (policy-based auto-merge) | ❌ Not started | Unprioritized — see §20's Phase 24 note: still needs a GitHub App (unlike Phase 24), and must never auto-merge Phase 24's `design-sync/agent-*` branches |
 | 20 | Notification routing — groups + urgency-based mentions | ❌ Not started | Unprioritized (new, proposed 2026-08-05) — extends Phase 9 |
-| 21 | SDLC / issue-tracker integration (JIRA, Planner) | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
+| 21 | SDLC / issue-tracker integration (JIRA, Planner) | ❌ Not started | Unprioritized — but see §22's Phase 24 note: if targeting JIRA, the client/credentials/API version are already built and provisioned, real cost is much lower than originally scoped |
 | 22 | In-plugin release notifications | ✅ Shipped (v1.19.0) | — (done) |
 | 23 | Visual design language revamp (v2) | ✅ Shipped, v1.20.0 — all 5 tabs (see §24) | — (done) |
 | 24 | JIRA-triggered design token agent (ticket-to-PR automation) | ✅ Built and validated end-to-end, structured tickets (2026-08-12) — see §25 | — (done for v1; free-text interpretation is a deliberate future extension, not a gap) |
@@ -2090,6 +2090,22 @@ up in PR history as "merged by [App Name]," never impersonating a person. This i
 meaningfully different auth model from everything else in this project (all PAT-based
 today) — flagged explicitly as new surface area, not an incremental extension.
 
+> **New evidence from Phase 24 (built 2026-08-12), confirming rather than changing this
+> section**: Phase 24's agent proved the default `GITHUB_TOKEN` is sufficient to *open*
+> a PR from within the same repo, no GitHub App needed. That does **not** carry over to
+> *this* phase's merge step — merging (and the "approves" half of "auto-merge") is a
+> different, higher-privilege action, and this section's original GitHub App call stands
+> unchanged.
+>
+> **Hard requirement, locked in now**: this phase's `pull_request` trigger filter
+> (`design-sync/sync-*`) must **never** be broadened to also match
+> `design-sync/agent-*` — that's Phase 24's own branch prefix, and Phase 24's
+> non-negotiable guardrail is that nothing it opens is ever auto-merged, under any
+> policy, regardless of how safe the change looks (see §25). A future implementer
+> loosely globbing `design-sync/*` here would silently violate that guardrail. Keep the
+> two branch prefixes distinct specifically so this filter can never accidentally catch
+> the wrong kind of PR.
+
 ### UI changes
 A small "Governance" section (Status tab, or its own) listing recent auto-merge
 decisions — reuses History's existing audit-entry-row component, tagged with an
@@ -2228,6 +2244,30 @@ credential type in this system, alongside the GitHub PAT and Phase 19's GitHub A
 Stored the same way Teams/Slack webhook URLs already are: a repo secret, never touching
 the plugin/Figma side — consistent with Phase 9's existing decision that a team-shared
 credential doesn't belong in per-machine `clientStorage`.
+
+> **New evidence from Phase 24 (built 2026-08-12) — this phase is now substantially
+> cheaper if the target is JIRA**, not a ground-up build:
+> - `scripts/jira-client.mjs` already exists in `design-tokens`, already handles
+>   `getIssue`/`addComment`/`transition` against a real JIRA Cloud site, and can be
+>   imported directly rather than rewritten — this phase's "Algorithm" section above
+>   becomes "call the existing client," not "build a JIRA REST wrapper."
+> - The **`JIRA_BASE_URL`/`JIRA_EMAIL`/`JIRA_API_TOKEN`** repo secrets this section
+>   calls a "third distinct credential type" are **already provisioned** on
+>   `design-tokens` — if this phase targets JIRA, that's zero new credential setup, not
+>   new surface area.
+> - Phase 24 also settled a question this section left open: use **JIRA REST API v2**,
+>   not v3 — v2 returns/accepts `description`/comment `body` as plain strings, v3 needs
+>   an Atlassian Document Format parser for no benefit here. This section's original
+>   `POST /rest/api/3/issue` should become a v2 call to match.
+> - This phase's dependency note above says it "likely" shares Phase 19's GitHub App
+>   identity — it doesn't need to. Creating/commenting on/transitioning a ticket, and
+>   opening a PR from within this same repo, never needs elevated merge/approve
+>   permissions the way Phase 19 does. This phase's real dependency is Phase 24's JIRA
+>   client, not Phase 19's auth work — the two can now be built in either order.
+>
+> None of this applies if the target is **Planner** instead of JIRA — Planner's Graph
+> API auth and data shape are unrelated to what Phase 24 built, and that half of this
+> phase's original scope is unchanged.
 
 ### UI changes
 Connect tab's setup guide gains a third optional collapsed section ("Issue tracking
@@ -2428,6 +2468,21 @@ Nothing outstanding on this phase for v1. Free-text ticket interpretation (an LL
 reading unstructured prose instead of the structured field format) remains a
 deliberately separate, unscoped future extension — see the "What this pass deliberately
 does not do" note in the original implementation plan.
+
+### Recommended next increment (not yet scoped, not yet built)
+Now that the structured path has real production mileage (§ above), **free-text
+ticket interpretation is the highest-leverage next step for this phase specifically** —
+not a new phase, an extension of this one. Reasoning: most real requesters (a
+stakeholder, a PM, a non-technical reporter) won't naturally write a ticket in the
+`Token: / Current value: / New value: / Reason:` format; they'll write "the primary
+button feels a bit flat, can we darken it" and expect that to work. The guardrails this
+version already proved in production — never guess, always bounce ambiguity back with a
+specific clarification comment, never auto-merge — are exactly the safety net a
+free-text version needs too; this version existing and working is what makes that
+extension lower-risk to attempt now than it would have been to build from scratch.
+Scope it as its own small plan when picked up, reusing this phase's resolve/validate/
+branch/PR machinery unchanged — only the "turn ticket text into `{tokenPath,
+currentValue, newValue}`" step is new, and it's an LLM call, not a new architecture.
 
 ### Goal
 When a new JIRA ticket requesting a design token change is created (and moved into a
