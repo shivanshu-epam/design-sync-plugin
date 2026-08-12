@@ -1835,6 +1835,28 @@ const DIFF_STATUS_LABEL: Record<DiffEntry['status'], string> = {
   unchanged: '',
 };
 
+// Status tab's read-only counterpart to renderDiffRow — same stacked
+// key/badge/values layout (no resolution controls, nothing to act on
+// here), so a differing token reads the same way whether you're looking
+// at it to resolve it (Sync) or just to see it (Status).
+function renderStatusDiffRow(d: DiffEntry): HTMLElement {
+  const row = el('div', { className: `diff-row status-${d.status}` });
+  const badgeText = d.cascadeOnly ? 'Auto-resolves' : DIFF_STATUS_LABEL[d.status];
+  row.appendChild(
+    el('div', { className: 'diff-key' }, [
+      `${d.category}/${d.key}`,
+      el('span', { className: 'diff-badge' }, [badgeText]),
+    ]),
+  );
+  row.appendChild(
+    el('div', { className: 'diff-values' }, [
+      diffValueLine('Figma', d.figmaDisplay, isReferenceToken(d.figmaValue)),
+      diffValueLine('GitHub', d.githubDisplay, isReferenceToken(d.githubValue)),
+    ]),
+  );
+  return row;
+}
+
 // Surfaces a step-by-step fix whenever a GitHub call fails on a permission
 // error (403 "Resource not accessible by personal access token" is the
 // common one — usually Pull requests or Actions write access missing from
@@ -2115,25 +2137,15 @@ function renderStatusTab(): HTMLElement {
     const tableDetails = persistentDetails('status-diff-table', true, 'setup-guide', [
       `${outOfSync.length} token${outOfSync.length === 1 ? '' : 's'} differ`,
     ]);
-    const table = el('table', { className: 'token-table' });
-    table.appendChild(
-      el('thead', {}, [
-        el('tr', {}, [el('th', {}, ['Token']), el('th', {}, ['Figma']), el('th', {}, ['GitHub']), el('th', {}, ['Status'])]),
-      ]),
-    );
-    const tbody = el('tbody');
-    for (const d of outOfSync) {
-      tbody.appendChild(
-        el('tr', {}, [
-          el('td', {}, [`${d.category}/${d.key}`]),
-          el('td', {}, [d.figmaDisplay]),
-          el('td', {}, [d.githubDisplay]),
-          el('td', {}, [d.cascadeOnly ? 'Auto-resolves (reference)' : DIFF_STATUS_LABEL[d.status]]),
-        ]),
-      );
-    }
-    table.appendChild(tbody);
-    tableDetails.appendChild(table);
+    // Was a 4-column <table> (Token/Figma/GitHub/Status) — fine on a wide
+    // screen, unreadable in a ~320px plugin panel, where it either crushed
+    // every cell down to a few characters or forced horizontal scrolling
+    // (which this plugin never wants — see the Sync tab's own diff rows,
+    // which solved this exact problem already). Reusing that same stacked
+    // row instead of inventing a second layout for the same kind of data.
+    const list = el('div', {});
+    for (const d of outOfSync) list.appendChild(renderStatusDiffRow(d));
+    tableDetails.appendChild(list);
     container.appendChild(tableDetails);
   }
 
