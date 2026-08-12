@@ -2,8 +2,12 @@
 
 End-to-end map of how every surface in this project talks to every other one: the
 Figma plugin, the `design-tokens` repo, Storybook, Teams/Slack notifications, and the
-JIRA-triggered ticket-to-PR agent. Companion to [README.md](README.md) (plugin detail)
-and [`design-sync-roadmap-phases-1-11.md`](design-sync-roadmap-phases-1-11.md) (full
+JIRA-triggered ticket-to-PR agent. This is the prose walkthrough — for the deep,
+structured version, see **[HLD.md](HLD.md)** (system design: components, deployment,
+integration/credential matrix, full setup runbook) and **[LLD.md](LLD.md)** (low-level
+design: data models, state machines, API request/response contracts, algorithms,
+sequence diagrams). Also see [README.md](README.md) (plugin detail) and
+[`design-sync-roadmap-phases-1-11.md`](design-sync-roadmap-phases-1-11.md) (full
 phase-by-phase spec). The JIRA agent's own deep-dive lives in
 [`JIRA-AGENT.md`](https://github.com/shivanshu-epam/design-tokens/blob/main/JIRA-AGENT.md)
 in the `design-tokens` repo.

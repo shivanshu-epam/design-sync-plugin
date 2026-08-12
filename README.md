@@ -11,6 +11,11 @@ full write-up (problem, architecture, every bug hit building this, setup
 from scratch), or [Design Sync — How It Works](https://claude.ai/code/artifact/2401fcf7-0662-4870-88aa-53b0d8ca659b)
 for a visual walkthrough of the architecture and the Sync flow.
 
+For the complete system — Figma, GitHub, Storybook, Teams/Slack, and the
+JIRA ticket agent all together — see [SYSTEM-REFERENCE.md](SYSTEM-REFERENCE.md)
+(prose walkthrough), [HLD.md](HLD.md) (system design + setup runbook), and
+[LLD.md](LLD.md) (data models, state machines, API contracts, algorithms).
+
 ## Token sources: Styles + Variables
 
 | Token category | Figma source |
