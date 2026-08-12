@@ -122,7 +122,7 @@ Legend:
 | 21 | SDLC / issue-tracker integration (JIRA, Planner) | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
 | 22 | In-plugin release notifications | ✅ Shipped (v1.19.0) | — (done) |
 | 23 | Visual design language revamp (v2) | ✅ Shipped, v1.20.0 — all 5 tabs (see §24) | — (done) |
-| 24 | JIRA-triggered design token agent (ticket-to-PR automation) | ❌ Not started (new, proposed 2026-08-12) | **Highest — Now** (see §25) |
+| 24 | JIRA-triggered design token agent (ticket-to-PR automation) | ✅ Built and validated end-to-end, structured tickets (2026-08-12) — see §25 | — (done for v1; free-text interpretation is a deliberate future extension, not a gap) |
 
 Separately: the plugin's v1.12.0–v1.16.2 release series (icons, progressive disclosure,
 the full tab-by-tab UI redesign) is **not** one of these phases — it's an orthogonal
@@ -2383,7 +2383,46 @@ automatically).
 
 ## 25. Phase 24 — JIRA-triggered design token agent (ticket-to-PR automation)
 
-**Status**: ❌ Not started (new, proposed 2026-08-12). **Priority**: **Highest — Now.**
+**Status**: ✅ Built and validated end-to-end on 2026-08-12 (structured tickets only —
+see "What shipped" below). **Priority**: — (v1 done; free-text interpretation remains a
+deliberate, separately-scoped future extension, not an outstanding gap in this phase).
+
+### What shipped
+Real JIRA site: `epam-ai-ux.atlassian.net`, project `DS` ("Design Tokens"), a
+Team-managed project with statuses To Do / In Design / Ready for Agent / In Review /
+Live. A JIRA Automation rule on "Work item transitioned → Ready for Agent" calls
+`POST /repos/shivanshu-epam/design-tokens/dispatches`, caught by two new GitHub Actions
+workflows in `design-tokens` (`ticket-agent.yml`, `ticket-agent-resolve.yml`) plus three
+new scripts (`scripts/jira-client.mjs`, `scripts/ticket-agent.mjs`,
+`scripts/ticket-agent-resolve.mjs`), committed as `6da8907`.
+
+**Full loop confirmed working against a real ticket (`DS-3`)**: ticket created in the
+agreed structured format → moved to "Ready for Agent" → agent fetched it, resolved
+`color/additional palette/yellow/yellow-5` against the real `design-tokens.json`,
+validated, branched, opened a PR → ticket auto-commented and moved to "In Review" →
+human merged the PR → companion workflow moved the ticket to "Live" with a confirming
+comment.
+
+**Two real setup issues hit and fixed along the way, worth keeping as institutional
+knowledge**:
+1. JIRA's Automation rule template initially had a literal placeholder string
+   (`PASTE_THE_SMART_VALUE_HERE`) left in the web request body instead of an actual
+   smart value — surfaced as a `404 Issue does not exist` from JIRA, since the literal
+   placeholder text was being sent as the issue key. Fixed by using JIRA's `{}`
+   smart-value picker in the rule's body field rather than typing a variable name by
+   hand.
+2. GitHub blocks Actions from opening PRs by default, **separately** from the
+   `permissions: pull-requests: write` already declared in the workflow YAML — a repo
+   Settings → Actions → General → "Allow GitHub Actions to create and approve pull
+   requests" checkbox, off by default, has to be explicitly enabled too.
+
+### What's not yet tested (not a defect — just not exercised yet)
+- The clarification/bounce-to-"In Design" path (missing field, wrong "Current value,"
+  nonexistent token, or a reference-kind token) — the happy path is proven, the
+  guardrail path isn't yet, though the logic was verified in isolation before shipping
+  (see the original implementation commit's own verification notes).
+- The close-without-merging path on `ticket-agent-resolve.yml` (only merge has been
+  exercised).
 
 ### Goal
 When a new JIRA ticket requesting a design token change is created (and moved into a
