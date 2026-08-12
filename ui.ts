@@ -1104,6 +1104,17 @@ function renderConnectForm(container: HTMLElement): void {
     const value = tokenInput.value.trim();
     if (value && value !== lastCheckedToken) {
       lastCheckedToken = value;
+      // loadUserRepos() calls render() immediately (before its fetch even
+      // resolves) to show the loading state — render() rebuilds this whole
+      // tab's DOM from scratch, including a brand-new token <input> whose
+      // value comes from state.settings. Without this, state.settings still
+      // held whatever the token was BEFORE this edit (empty, on first
+      // connect), so the rebuilt field silently reset to empty the instant
+      // you tabbed away — you'd see a populated field, blur it, and the
+      // very next render would wipe it back out from under you. Persist
+      // what's actually in the field first, so the field survives its own
+      // trigger re-rendering it.
+      state.settings = { ...(state.settings ?? { owner: '', repo: '', branch: 'main', path: 'design-tokens.json', token: '' }), token: value };
       loadUserRepos(value);
     }
   });
