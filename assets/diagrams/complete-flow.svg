@@ -9,7 +9,7 @@
   text{ font-family:-apple-system,"Segoe UI",Helvetica,Arial,sans-serif; }
   .th{ font-size:14px; font-weight:600; fill:#131a15; }
   .ts{ font-size:12px; fill:#5b665f; }
-  .lbl{ font-size:11px; fill:#5b665f; }
+  .lbl{ font-size:10px; fill:#5b665f; }
   .lbl.amber{ fill:#a4611a; }
   .c-amber .th, .c-amber .ts{ fill:#7a4712; }
   .c-teal .th, .c-teal .ts{ fill:#0a5346; }
@@ -44,55 +44,7 @@
 <text x="40" y="160" class="lane">GITHUB — DESIGN-TOKENS REPO</text>
 <text x="40" y="346" class="lane">JIRA TICKET AGENT</text>
 
-<!-- lane 1 arrows -->
-<line x1="240" y1="48" x2="300" y2="48" class="arr" marker-start="url(#a)" marker-end="url(#a)"/>
-<text x="248" y="40" class="lbl">figma.* API</text>
-<line x1="500" y1="48" x2="560" y2="48" class="arr" marker-start="url(#a)" marker-end="url(#a)"/>
-<text x="505" y="40" class="lbl">postMessage</text>
-
-<!-- ui.ts -> PR gate (write) -->
-<line x1="660" y1="76" x2="660" y2="166" class="arr" marker-end="url(#a)"/>
-<text x="668" y="124" class="lbl">branch + PR</text>
-
-<!-- ui.ts -> tokens.json (read, dashed) -->
-<path d="M750,76 L750,140 L930,140 L930,166" fill="none" class="arr dashed" marker-end="url(#a)"/>
-<text x="770" y="134" class="lbl">read (GET)</text>
-
-<!-- PR gate -> tokens.json (merge) -->
-<line x1="760" y1="194" x2="800" y2="194" class="arr" marker-end="url(#a)"/>
-<text x="763" y="186" class="lbl">merge</text>
-
-<!-- tokens.json -> Storybook -->
-<line x1="890" y1="222" x2="890" y2="262" class="arr" marker-end="url(#a)"/>
-<text x="898" y="246" class="lbl">CI rebuild</text>
-
-<!-- Storybook -> Pages -->
-<line x1="980" y1="290" x2="1020" y2="290" class="arr" marker-end="url(#a)"/>
-<text x="982" y="282" class="lbl">deploy</text>
-
-<!-- tokens.json -> Teams/Slack -->
-<path d="M820,222 L820,242 L140,242 L140,262" fill="none" class="arr" marker-end="url(#a)"/>
-<text x="440" y="236" class="lbl">notify</text>
-
-<!-- lane 3 arrows -->
-<line x1="240" y1="380" x2="300" y2="380" class="arr amber" marker-end="url(#a)"/>
-<text x="245" y="372" class="lbl amber">status change</text>
-<line x1="500" y1="380" x2="560" y2="380" class="arr amber" marker-end="url(#a)"/>
-<text x="503" y="372" class="lbl amber">repository_dispatch</text>
-
-<!-- ticket-agent.mjs -> PR gate (opens PR) -->
-<line x1="650" y1="352" x2="650" y2="222" class="arr amber" marker-end="url(#a)"/>
-<text x="605" y="290" class="lbl amber">opens PR</text>
-
-<!-- PR gate -> resolve.mjs (closed) -->
-<path d="M700,222 L700,335 L910,335 L910,352" fill="none" class="arr amber" marker-end="url(#a)"/>
-<text x="705" y="329" class="lbl amber">PR closed</text>
-
-<!-- resolve.mjs -> JIRA ticket (loop closes) -->
-<path d="M910,408 L910,430 L140,430 L140,408" fill="none" class="arr amber" marker-end="url(#a)"/>
-<text x="480" y="424" class="lbl amber">comment + transition</text>
-
-<!-- ============ NODES ============ -->
+<!-- ============ NODES (drawn first so arrow labels always paint on top) ============ -->
 
 <!-- lane 1: plugin -->
 <g class="box"><rect x="40" y="20" width="200" height="56" rx="4"/>
@@ -114,7 +66,7 @@
 
 <g class="box"><rect x="800" y="166" width="260" height="56" rx="4"/>
 <text x="930" y="189" text-anchor="middle" class="th">design-tokens.json</text>
-<text x="930" y="207" text-anchor="middle" class="ts">Source of truth</text></g>
+<text x="930" y="207" text-anchor="middle" class="ts">Source of truth + audit log</text></g>
 
 <!-- lane 2b: downstream -->
 <g class="box"><rect x="40" y="262" width="200" height="56" rx="4"/>
@@ -146,5 +98,56 @@
 <text x="910" y="375" text-anchor="middle" class="th">resolve.mjs</text>
 <text x="910" y="393" text-anchor="middle" class="ts">Reports outcome to JIRA</text></g>
 
-<text x="40" y="462" class="legend">Amber = the JIRA-triggered path. Teal = the one gate every change passes through — never auto-merged. Gray = the Figma/plugin path and its downstream fan-out.</text>
+<!-- ============ EDGES + LABELS ============ -->
+
+<!-- lane 1 arrows -->
+<line x1="240" y1="48" x2="300" y2="48" class="arr" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="270" y="40" text-anchor="middle" class="lbl">figma.* API</text>
+<line x1="500" y1="48" x2="560" y2="48" class="arr" marker-start="url(#a)" marker-end="url(#a)"/>
+<text x="530" y="40" text-anchor="middle" class="lbl">postMessage</text>
+
+<!-- ui.ts -> PR gate (write) -->
+<line x1="660" y1="76" x2="660" y2="166" class="arr" marker-end="url(#a)"/>
+<text x="668" y="124" class="lbl">branch + PR</text>
+
+<!-- ui.ts -> tokens.json (read, dashed) -->
+<path d="M750,76 L750,140 L930,140 L930,166" fill="none" class="arr dashed" marker-end="url(#a)"/>
+<text x="770" y="134" class="lbl">read (GET)</text>
+
+<!-- PR gate -> tokens.json (merge) -->
+<line x1="760" y1="194" x2="800" y2="194" class="arr" marker-end="url(#a)"/>
+<text x="780" y="186" text-anchor="middle" class="lbl">merge</text>
+
+<!-- tokens.json -> Storybook -->
+<line x1="890" y1="222" x2="890" y2="262" class="arr" marker-end="url(#a)"/>
+<text x="898" y="246" class="lbl">CI rebuild</text>
+
+<!-- Storybook -> Pages -->
+<line x1="980" y1="290" x2="1020" y2="290" class="arr" marker-end="url(#a)"/>
+<text x="1000" y="282" text-anchor="middle" class="lbl">deploy</text>
+
+<!-- tokens.json -> Teams/Slack -->
+<path d="M820,222 L820,242 L140,242 L140,262" fill="none" class="arr" marker-end="url(#a)"/>
+<text x="440" y="236" class="lbl">notify (Teams and/or Slack, independently)</text>
+
+<!-- lane 3 arrows -->
+<line x1="240" y1="380" x2="300" y2="380" class="arr amber" marker-end="url(#a)"/>
+<text x="270" y="372" text-anchor="middle" class="lbl amber">status</text>
+<line x1="500" y1="380" x2="560" y2="380" class="arr amber" marker-end="url(#a)"/>
+<text x="530" y="372" text-anchor="middle" class="lbl amber">dispatch</text>
+
+<!-- ticket-agent.mjs -> PR gate (opens PR) -->
+<line x1="650" y1="352" x2="650" y2="222" class="arr amber" marker-end="url(#a)"/>
+<text x="605" y="290" class="lbl amber">opens PR</text>
+
+<!-- PR gate -> resolve.mjs (closed) -->
+<path d="M700,222 L700,335 L910,335 L910,352" fill="none" class="arr amber" marker-end="url(#a)"/>
+<text x="705" y="329" class="lbl amber">PR closed</text>
+
+<!-- resolve.mjs -> JIRA ticket (loop closes) -->
+<path d="M910,408 L910,430 L140,430 L140,408" fill="none" class="arr amber" marker-end="url(#a)"/>
+<text x="480" y="424" class="lbl amber">comment + transition</text>
+
+<text x="40" y="452" class="legend">Amber = the JIRA-triggered path. Teal = the one gate every change passes through — never auto-merged. Gray = the Figma/plugin path and its downstream fan-out.</text>
+<text x="40" y="470" class="legend">Dashed = a read-only call. Every arrow into "Pull request" ends in a human merge — nothing here calls a merge API.</text>
 </svg>
