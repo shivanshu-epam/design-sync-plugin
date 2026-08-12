@@ -1362,16 +1362,24 @@ function renderConnectTab(): HTMLElement {
   // collapses once connected, since the tag alone already says that at a
   // glance — same "closed until it needs attention" convention every other
   // accordion in this app follows.
-  const connected = isConfigured(state.settings) && !state.connectEditing;
-  const statusTag = tag(connected ? 'Connected' : 'Disconnected');
-  if (connected) statusTag.classList.add('connected');
-  const details = persistentDetails('connect-section', !connected, 'setup-guide', [
+  // Whether a real connection exists — drives the tag. Independent of
+  // whether the edit form happens to be open right now: editing an
+  // existing connection doesn't disconnect it, so the tag must keep saying
+  // "Connected" the whole time you're editing, not flip to "Disconnected"
+  // just because the form is what's currently showing.
+  const hasConnection = isConfigured(state.settings);
+  // Whether to show the connected summary vs. the form — this is the one
+  // that cares about editing.
+  const showConnectedBody = hasConnection && !state.connectEditing;
+  const statusTag = tag(hasConnection ? 'Connected' : 'Disconnected');
+  if (hasConnection) statusTag.classList.add('connected');
+  const details = persistentDetails('connect-section', !showConnectedBody, 'setup-guide', [
     icon('GithubLogo', undefined, 13),
     'GitHub Repo',
     statusTag,
   ]);
   const body = el('div', {});
-  if (connected && state.settings) {
+  if (showConnectedBody && state.settings) {
     body.appendChild(renderConnectedSummary(state.settings));
     if (state.connectStatus) {
       body.appendChild(statusBanner(state.connectStatus.ok ? 'success' : 'error', [state.connectStatus.message]));
