@@ -9,6 +9,72 @@ build-number tracking — `package.json`'s `version` field is the single
 source of truth, and it's what the plugin's footer displays (baked in at
 build time).
 
+## [1.20.0] - 2026-08-12
+
+### Added
+- **"Ledger" visual design language (Phase 23), applied to every tab.**
+  Replaced the old dev-tool palette (slate/blue/green, 5px radius, 12px
+  uppercase headers) with near-black ink on warm paper, one confident
+  indigo accent, a real type scale (22px bold headers down to 10.5px
+  labels — only headings are ever bold, nothing else competes with them),
+  and 2px sharp corners. Containers separate by surface color and spacing
+  instead of a border around everything: `.status-banner`, `.diff-row`,
+  `details.setup-guide`, and the Connect tab's panel all moved to the same
+  neutral-fill-plus-colored-edge treatment. Direction was validated with a
+  before/after comparison against the plugin's real CSS before any of this
+  landed.
+- **Connect tab, fully rebuilt.** A GitHub-mark hero with one line of value
+  copy opens the setup flow; the repo-search step stays hidden until the
+  token actually validates (auto-checked on blur, instead of requiring a
+  separate click); the manual-entry escape hatch is now a quiet text link
+  instead of competing visually with the real path; a brief "Connected"
+  pulse plays before jumping to Sync instead of an instant silent redirect.
+  The whole tab is now one real collapsible accordion — "GitHub Repo"
+  heading plus a Connected/Disconnected tag, always visible whether
+  collapsed or expanded — matching the same convention Notifications and
+  Recent Activity already used, instead of a bespoke layout that changed
+  shape per state.
+- **App-wide content pass.** Every tab now has a real page heading
+  (previously only Custom Tokens did). A new CSS-only styled tooltip
+  (`[data-tip]`) replaced ~11 native `title=` attributes that were
+  invisible until hover; dense inline explanations (Connect's permission
+  scopes, the Storybook setup guide) became scannable `.tag` chips with
+  the detail on hover instead of a paragraph.
+- **Sync/Status diff rows got semantic color.** The Conflict/New-in-Figma/
+  New-in-GitHub badge was uniform gray regardless of status — now it
+  carries the same color as its row's left edge and its Figma/GitHub
+  value labels, so one row tells one consistent story instead of the
+  badge being the one element with no signal.
+
+### Fixed
+- **Status tab's Figma↔GitHub diff table** was a 4-column `<table>` —
+  unreadable or horizontally scrolling in this plugin's ~320px panel.
+  Replaced with the same stacked diff-row layout Sync already used for
+  identical data.
+- **History tab's Revert button (Phase 5) had no confirmation and no
+  danger styling** despite a `--danger` token existing unused — a single
+  accidental click opened a real PR and rewrote Figma immediately, flagged
+  early on as "a complete miss." Now a two-step arm/confirm button: the
+  first click turns it red and states what's about to happen in visible
+  text (not just a hover tooltip), the second click is what actually
+  fires. Disarms on blur or after 5 seconds so it can never sit silently
+  armed. No modal was introduced — this app has never had one, and the
+  arm/confirm pattern fits its existing "a button mutates its own state on
+  click" language better than adding a new component for one screen.
+- Custom Tokens tab: heading was lowercase ("Custom tokens") against every
+  other tab's Title Case; its three category headings never got the
+  count-tag treatment Sync's identical pattern already has; each row's
+  remove button had no accessible name at all.
+- A real browser bug in the shared accordion helper (`persistentDetails`):
+  some browsers fire an unsolicited `toggle` event the instant a
+  `<details open>` element is first inserted into the DOM, with zero user
+  interaction. Unguarded, that phantom event was recorded as an explicit
+  user choice and permanently pinned an accordion's open/closed state,
+  silently breaking any accordion whose default is meant to change later
+  (the Connect tab's "open while disconnected, closed once connected"
+  behavior, specifically). Fixed once, in the shared helper — every
+  accordion in the app benefits, not just Connect's.
+
 ## [1.19.0] - 2026-08-06
 
 ### Added
