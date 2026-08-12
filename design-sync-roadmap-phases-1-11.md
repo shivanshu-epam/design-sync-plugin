@@ -121,7 +121,7 @@ Legend:
 | 20 | Notification routing — groups + urgency-based mentions | ❌ Not started | Unprioritized (new, proposed 2026-08-05) — extends Phase 9 |
 | 21 | SDLC / issue-tracker integration (JIRA, Planner) | ❌ Not started | Unprioritized (new, proposed 2026-08-05) |
 | 22 | In-plugin release notifications | ✅ Shipped (v1.19.0) | — (done) |
-| 23 | Visual design language revamp (v2) | ❌ Not started, **unscoped** | Unprioritized — needs a direction decision before it can be scoped at all |
+| 23 | Visual design language revamp (v2) | 🟡 Partial — direction chosen ("Ledger") and shipped to `main`, not yet in a tagged release (see §24) | **Now** |
 
 Separately: the plugin's v1.12.0–v1.16.2 release series (icons, progressive disclosure,
 the full tab-by-tab UI redesign) is **not** one of these phases — it's an orthogonal
@@ -2328,36 +2328,57 @@ section.
 
 ## 24. Phase 23 — Visual design language revamp (v2)
 
-**Status**: ❌ Not started, **deliberately unscoped** (new, proposed 2026-08-05).
-**Priority**: Unprioritized — cannot be scoped further until a direction is chosen.
+**Status**: 🟡 Partial — direction chosen and substantially built on `main`, not yet
+released (no version bump / CHANGELOG entry — still sitting at v1.19.0's changelog even
+though `main` is well ahead of it in commits).
+**Priority**: **Now** — actively being worked, tab by tab.
 
-### Goal
-A second visual-identity pass, beyond the icon/progressive-disclosure IA work already
-shipped (v1.12.0–v1.18.0) — a more considered, "cleaner and more visually friendly"
-design language: refined type scale, more deliberate spacing rhythm, possibly a
-lighter/more modern component style than today's dense, dev-tool-utilitarian look.
+### Direction chosen: "Ledger"
+Near-black ink on warm paper, one confident indigo accent (`#3f4dff` light /
+`#7b84ff` dark), a real type scale (22px bold headers down to 10.5px labels, only
+headings/section-summary text ever bold — everything else normal weight), 2px sharp
+corners (was 5px), separation via surface-color + spacing instead of borders-on-every-
+container. Validated via a before/after comparison artifact against the plugin's real
+CSS before any implementation began, then approved.
 
-### Problem addressed
-User's own framing: "Revamp the design, to new design language, more clean, and visual
-friendly." Explicitly a follow-on to, not a replacement of, the shipped redesign pass —
-that work fixed information architecture and hierarchy (icons, disclosure, tags); it
-deliberately did not rethink the underlying visual language itself (palette, type
-scale, spacing system) beyond what was needed to support those IA fixes.
+### What's shipped so far (chronological, all on `main`, unpushed version bump)
+- **Token foundation** — full color palette, type scale (`--fs-*`/`--fw-*`), `--radius`
+  replaced app-wide (every tab inherits this since it's one stylesheet).
+- **Connect tab — full redesign**, done in several passes as issues surfaced in review:
+  - Structural Ledger pass (compact connected-card treatment, buttons, banners,
+    accordions, tags).
+  - A "Cred-style" interaction pass: a hero mark + value line, progressive disclosure
+    (repo search stays hidden until the token validates, auto-triggered on blur), the
+    manual-entry escape hatch demoted to a plain text link, a trust badge, a brief
+    success-pulse before jumping to Sync.
+  - Three rounds of consistency fixes: typography (one bold heading, nothing else
+    competing with it), a background for the "What permissions does this need?"
+    accordion (was invisible against the new panel tone), and finally rebuilding the
+    whole tab as one real `persistentDetails` accordion — "GitHub Repo" heading +
+    Connected/Disconnected tag, always visible collapsed or expanded, matching
+    Notifications/Recent activity's own convention exactly instead of a bespoke layout.
+  - Along the way, fixed a genuine browser bug in the shared `persistentDetails()`
+    helper itself (a phantom `toggle` event some browsers fire when a `<details open>`
+    is first inserted, with no user interaction, which was silently overriding computed
+    open/closed defaults) — benefits every accordion in the app, not just Connect's.
+- **App-wide content/IA pass**: every tab now has a real page-level `<h2>` (previously
+  only Custom Tokens did); a styled `[data-tip]` tooltip (CSS-only, matches Ledger)
+  replaced ~11 native `title=` attributes that were invisible until hover; verbose
+  inline explanation paragraphs (Connect's permission scopes, the Storybook setup
+  guide) trimmed into scannable `.tag` chips + short sentences.
+- **Status tab**: the Figma↔GitHub diff table (a 4-column `<table>`, unreadable/
+  scroll-inducing in a ~320px panel) replaced with the same stacked diff-row layout the
+  Sync tab already used for identical data — no horizontal scroll at any panel width.
 
-### Why this section has no algorithm/data-model/acceptance-criteria subsections
-Every other phase in this document specifies a concrete build. This one can't yet — it
-needs a real design exploration, not a spec written speculatively ahead of a direction
-decision, the same way the *first* visual pass this session started with a UX-expert
-critique and two clarifying questions before any code was touched (see this session's
-own history: palette direction, then tab-scope, decided before implementation began).
-
-### Recommended next step, not a build step
-Before scoping further: pick 2–3 concrete directions to compare — for example,
-"lighter/more whitespace-driven," "more saturated/branded," or "keep the current
-dev-tool-dense feel but refine only type/spacing" — the same lightweight
-question-then-decide process already used once in this project. Scoping this properly
-(files touched, acceptance criteria) is the *next* phase-writing pass, once that
-decision exists.
+### What's still pending
+- **Sync, History, Custom Tokens tabs** haven't had their own full-attention pass yet —
+  they inherited the token-level palette/type-scale shift for free (one stylesheet),
+  but no component-level Ledger treatment (diff-row/toggle/badge numbers-as-content
+  styling shown in the original comparison mockup, Custom Tokens' table editors, etc.).
+  Same tab-by-tab cadence as this whole pass so far.
+- **Not released**: all of the above is on `main` but `package.json`/`CHANGELOG.md`
+  still say v1.19.0. Needs a version bump + changelog entry (the `release` skill) once
+  the remaining tabs are done, or sooner if a checkpoint release is wanted.
 
 ---
 
@@ -2409,8 +2430,9 @@ Phase 20 (notification routing) — needs Phase 9 (notifications half). [UNPRIOR
 
 Phase 21 (SDLC/issue-tracker) — needs Phase 5. [UNPRIORITIZED]
 Phase 22 (in-plugin release notices) — no dependencies, fully independent. [UNPRIORITIZED]
-Phase 23 (visual design v2) — no technical dependencies, but UNSCOPED until a
-   direction is chosen. Not sequenced against anything else.
+Phase 23 (visual design v2) — no technical dependencies. [IN PROGRESS — Connect tab
+   + app-wide token/heading/tooltip pass shipped to main; Sync/History/Custom Tokens
+   still pending, not yet released as a version bump]
 ```
 
 ## 26. Suggested build order
@@ -2469,10 +2491,11 @@ new capability, and it's small:
 15. **Phase 15 (blast-radius preview)** — blocked on Phase 11 (and therefore transitively
     on Phase 10). Last in the chain by construction.
 
-**Phase 23 (visual design v2)** is intentionally absent from this ordered list — it
-isn't blocked on anything technical, but it can't be sequenced against build-order
-until a direction is chosen (see its own section). Could reasonably happen in parallel
-with any of the above once scoped.
+**Phase 23 (visual design v2)** is intentionally absent from the numbered list above —
+it isn't blocked on anything technical and is currently the phase actually being worked
+(see §24): direction chosen, Connect tab + app-wide token/heading/tooltip pass shipped
+to `main`, Sync/History/Custom Tokens still pending. Running in parallel with the
+"do first" Revert UX fix above, not sequenced against the other unstarted phases.
 
 ---
 
