@@ -1753,7 +1753,7 @@ function renderDiffRow(d: DiffEntry): HTMLElement {
   const badgeText = { 'added-figma': 'New in Figma', 'added-github': 'New in GitHub', modified: 'Conflict', unchanged: '' }[d.status];
   const badgeIcon: IconName = d.status === 'modified' ? 'WarningCircle' : 'PlusCircle';
   row.appendChild(
-    el('div', { className: 'diff-key' }, [d.key, el('span', { className: 'diff-badge' }, [icon(badgeIcon, undefined, 10), badgeText])]),
+    el('div', { className: 'diff-key' }, [d.key, el('span', { className: `diff-badge ${d.status}` }, [icon(badgeIcon, undefined, 10), badgeText])]),
   );
   row.appendChild(
     el('div', { className: 'diff-values' }, [
@@ -1845,7 +1845,7 @@ function renderStatusDiffRow(d: DiffEntry): HTMLElement {
   row.appendChild(
     el('div', { className: 'diff-key' }, [
       `${d.category}/${d.key}`,
-      el('span', { className: 'diff-badge' }, [badgeText]),
+      el('span', { className: `diff-badge ${d.status}` }, [badgeText]),
     ]),
   );
   row.appendChild(

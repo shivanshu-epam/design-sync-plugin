@@ -44,7 +44,6 @@
     --danger-hover: #a12c19;
 
     --warn: #a8590a;
-    --warn-bg: #fbeed9;
 
     --radius: 2px;               /* was 5px — Ledger reads as cut, not rounded; 0 tested too harsh in review */
     --overlay-shadow: 0 4px 14px rgba(10, 10, 10, 0.1); /* the one floating element (repo search menu) — everything else signals elevation with surface color, not a shadow */
@@ -85,7 +84,6 @@
       --danger-hover: #ff8a75;
 
       --warn: #e08a3c;
-      --warn-bg: #2b2007;
 
       --overlay-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
     }
@@ -319,10 +317,15 @@
   .status-section-heading { display: flex; align-items: center; gap: 6px; }
   .status-section-heading .icon + .icon { margin-left: -2px; }
   .status-section-heading .tag { margin-left: 2px; }
-  .diff-row { border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 11px; margin-bottom: 8px; background: var(--surface); }
-  .diff-row.status-added-figma { border-left: 3px solid var(--cta); }
-  .diff-row.status-added-github { border-left: 3px solid var(--accent); }
-  .diff-row.status-modified { border-left: 3px solid var(--warn); background: var(--warn-bg); }
+  /* Same pattern as .status-banner: a neutral --bg-subtle fill for every
+     status, differentiated only by the left edge color — not a full ring
+     border, and not a separate per-status background tint (a conflict row
+     doesn't need a louder fill than an addition, the badge + resolution
+     controls already say enough). */
+  .diff-row { background: var(--bg-subtle); border-radius: var(--radius); padding: 10px 12px; margin-bottom: 8px; border-left: 2px solid transparent; }
+  .diff-row.status-added-figma { border-left-color: var(--cta); }
+  .diff-row.status-added-github { border-left-color: var(--accent); }
+  .diff-row.status-modified { border-left-color: var(--warn); }
   .diff-key { font-weight: 700; font-size: 12.5px; margin-bottom: 7px; overflow-wrap: anywhere; }
   .diff-badge {
     display: inline-flex;
@@ -333,12 +336,24 @@
     text-transform: uppercase;
     letter-spacing: 0.03em;
     color: var(--text-muted);
-    background: var(--bg-subtle);
+    /* --surface, not --bg-subtle — .diff-row is bg-subtle now, so a badge
+       in that same tone would go invisible. Same "child flips tone" rule
+       used for .trust-badge and code blocks inside setup-guide. */
+    background: var(--surface);
     border-radius: 2px;
     padding: 1px 5px;
     margin-left: 6px;
     vertical-align: middle;
   }
+  /* Status color, not just uniform gray — matches the same color already
+     used for this row's left edge and its Figma/GitHub value labels, so
+     the signal is consistent top-to-bottom on one row instead of the badge
+     being the one element that doesn't say which kind of difference this
+     is. Soft tint via color-mix against --surface (the badge's own
+     background) rather than a new --*-soft custom property per color. */
+  .diff-badge.modified { color: var(--warn); background: color-mix(in srgb, var(--warn) 20%, var(--surface)); }
+  .diff-badge.added-figma { color: var(--cta); background: color-mix(in srgb, var(--cta) 18%, var(--surface)); }
+  .diff-badge.added-github { color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, var(--surface)); }
   .diff-values { display: flex; flex-direction: column; gap: 5px; margin-bottom: 8px; }
   .diff-value-line {
     display: flex;
